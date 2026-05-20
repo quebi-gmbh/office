@@ -153,6 +153,28 @@ export const SHORTCUTS: Shortcut[] = [
     },
   },
 
+  // ── File
+  {
+    id: "export-dialog",
+    keys: "Mod+S",
+    label: "Export image…",
+    group: "file",
+    run(engine, ev) {
+      ev.preventDefault();
+      engine.openExportDialog?.();
+    },
+  },
+  {
+    id: "quick-save",
+    keys: "Mod+Shift+S",
+    label: "Quick-save PNG",
+    group: "file",
+    run(engine, ev) {
+      ev.preventDefault();
+      engine.quickSavePng?.();
+    },
+  },
+
   // ── Help (no run needed — handled directly in useShortcuts by id)
   {
     id: "help",

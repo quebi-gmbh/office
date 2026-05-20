@@ -109,6 +109,11 @@ export interface Engine {
   /** Viewport shortcut callbacks — set by the viewport hook after mount. */
   fitViewport?(): void;
   resetZoom?(): void;
+  /** Export shortcuts — set by PaintApp after mount. */
+  openExportDialog?(): void;
+  quickSavePng?(): void;
+  /** Push a history snapshot immediately (used after external canvas writes, e.g. import). */
+  snapshotNow(): void;
   isDragging: boolean;
   dispose(): void;
 }
@@ -476,6 +481,9 @@ export function createEngine(): Engine {
 
     fitViewport: undefined,
     resetZoom: undefined,
+    openExportDialog: undefined,
+    quickSavePng: undefined,
+    snapshotNow: pushSnapshot,
 
     dispose() {
       window.removeEventListener("keydown", onKeyDown, true);

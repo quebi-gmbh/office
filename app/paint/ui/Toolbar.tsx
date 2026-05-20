@@ -11,6 +11,9 @@ interface ToolbarProps {
   state: EngineState;
   onHelpOpen(): void;
   onNewDoc(): void;
+  onOpenFile(): void;
+  onExport(): void;
+  onClearData(): void;
 }
 
 const TOOL_BUTTONS: Array<{ id: ToolId; label: string; title: string }> = [
@@ -27,18 +30,7 @@ const TOOL_BUTTONS: Array<{ id: ToolId; label: string; title: string }> = [
 
 const SHAPE_TOOLS = new Set<ToolId>(["line", "rect", "ellipse"]);
 
-export function Toolbar({ engine, state, onHelpOpen, onNewDoc }: ToolbarProps) {
-  function download() {
-    const canvas = document.querySelector<HTMLCanvasElement>(".paint-canvas-main");
-    if (!canvas) return;
-    const url = canvas.toDataURL("image/png");
-    const a = document.createElement("a");
-    a.href = url;
-    const now = new Date();
-    const ts = now.toISOString().slice(0, 16).replace("T", "-").replace(":", "");
-    a.download = `paint-${ts}.png`;
-    a.click();
-  }
+export function Toolbar({ engine, state, onHelpOpen, onNewDoc, onOpenFile, onExport, onClearData }: ToolbarProps) {
 
   return (
     <header className="paint-toolbar">
@@ -164,8 +156,20 @@ export function Toolbar({ engine, state, onHelpOpen, onNewDoc }: ToolbarProps) {
       <button type="button" className="paint-toolbar__btn" onClick={onNewDoc} title="New document">
         New
       </button>
-      <button type="button" className="paint-toolbar__btn" onClick={download} title="Download as PNG">
-        ↓ PNG
+      <button type="button" className="paint-toolbar__btn" onClick={onOpenFile} title="Open image file">
+        Open
+      </button>
+      <button type="button" className="paint-toolbar__btn" onClick={onExport} title="Export (Ctrl+S)">
+        ↓ Export
+      </button>
+      <button
+        type="button"
+        className="paint-toolbar__btn"
+        onClick={onClearData}
+        title="Clear saved session data"
+        style={{ color: "var(--muted)" }}
+      >
+        Clear data
       </button>
 
       <div className="paint-toolbar__sep" />
