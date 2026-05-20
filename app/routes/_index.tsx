@@ -2,9 +2,14 @@ import { Link } from "react-router";
 
 const tools = [
   {
-    to: "/text",
-    name: "Text editor",
-    blurb: "A lightweight code & text editor with syntax highlighting.",
+    to: "/code",
+    name: "Code editor",
+    blurb: "A lightweight code editor with syntax highlighting.",
+  },
+  {
+    to: "/doc",
+    name: "Document editor",
+    blurb: "A rich-text editor for notes and documents.",
   },
   {
     to: "/paint",

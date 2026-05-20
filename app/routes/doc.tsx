@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 
-const STORAGE_KEY = "office:text:draft";
+const STORAGE_KEY = "office:doc:draft";
 
-export default function Text() {
+export default function Doc() {
   const [value, setValue] = useState("");
 
   useEffect(() => {
@@ -16,8 +16,8 @@ export default function Text() {
   return (
     <section className="text">
       <header className="text__bar">
-        <h1>Text editor</h1>
-        <small>autosaved locally — syntax highlighting coming soon</small>
+        <h1>Document editor</h1>
+        <small>autosaved locally — rich-text formatting coming soon</small>
       </header>
       <textarea
         className="text__area"

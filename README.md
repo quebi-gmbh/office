@@ -6,7 +6,8 @@ Hosted publicly via GitHub Pages at **[office.quebi.de](https://office.quebi.de)
 
 ## Tools
 
-- **Text editor** — [office.quebi.de/text](https://office.quebi.de/text) — lightweight editor (syntax highlighting coming soon).
+- **Code editor** — [office.quebi.de/code](https://office.quebi.de/code) — lightweight code editor with syntax highlighting (coming soon).
+- **Document editor** — [office.quebi.de/doc](https://office.quebi.de/doc) — rich-text editor for notes and documents (coming soon).
 - **Paint** — [office.quebi.de/paint](https://office.quebi.de/paint) — simple Paint-like drawing tool.
 
 More tools may follow.
@@ -35,7 +36,7 @@ Files in `app/routes/` become routes via a generator (`scripts/generate-routes.t
 | File              | URL          |
 |-------------------|--------------|
 | `_index.tsx`      | `/`          |
-| `text.tsx`        | `/text`      |
+| `code.tsx`        | `/code`      |
 | `foo.bar.tsx`     | `/foo/bar`   |
 | `$id.tsx`         | `/:id`       |
 | `$.tsx`           | `/*` (splat) |
@@ -49,7 +50,7 @@ Pushes to `main` build and deploy via `.github/workflows/deploy.yml`. The build:
 
 1. Bundles to `dist/` with `Bun.build`
 2. Copies `public/` (including `CNAME`) into `dist/`
-3. Writes `dist/404.html` as a copy of `index.html` so deep links like `/text` and `/paint` survive a hard refresh on GitHub Pages.
+3. Writes `dist/404.html` as a copy of `index.html` so deep links like `/code`, `/doc`, and `/paint` survive a hard refresh on GitHub Pages.
 
 DNS: point `office` (CNAME) at `<user>.github.io`.
 
