@@ -207,7 +207,10 @@ export function createEngine(): Engine {
       },
 
       setBg(c) {
-        updateState((st) => ({ ...st, bg: c }));
+        updateState((st) => {
+          saveColourPrefs({ fg: st.fg, bg: c, recents: st.recentColours });
+          return { ...st, bg: c };
+        });
       },
     };
   }

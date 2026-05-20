@@ -64,6 +64,8 @@ export function PaintApp() {
         engine.store.setState((s) => ({ ...s, zoom: 1, panX: 0, panY: 0 }));
       }
     };
+    // Fit the canvas to the viewport on first mount.
+    engine.fitViewport();
   }, [engine, viewport]);
 
   // ─── Export wiring ─────────────────────────────────────────────────────────

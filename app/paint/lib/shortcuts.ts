@@ -155,6 +155,14 @@ export const SHORTCUTS: Shortcut[] = [
 
   // ── File
   {
+    id: "paste-image",
+    keys: "Mod+V",
+    label: "Paste image from clipboard",
+    group: "file",
+    // Handled natively by the paste event listener in PaintApp — listed here for discoverability.
+    run(_engine, ev) { ev.preventDefault(); },
+  },
+  {
     id: "export-dialog",
     keys: "Mod+S",
     label: "Export image…",

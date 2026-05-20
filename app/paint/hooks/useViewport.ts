@@ -105,24 +105,25 @@ export function useViewport(engine: Engine): UseViewportResult {
 
       if (isZoom) {
         // Zoom centred at cursor.
+        //
+        // getBoundingClientRect() returns visual coordinates that already
+        // incorporate the CSS transform (translate + scale). So:
+        //   rect.left = outerLeft + panX
+        //   rect.top  = outerTop  + panY
+        //
+        // Doc-space point under cursor:
+        //   docX = (clientX - rect.left) / zoom
+        //
+        // To keep that doc point fixed after zoom change:
+        //   outerLeft + newPanX + docX * newZoom = clientX
+        //   newPanX = clientX - (rect.left - panX) - docX * newZoom
         const rect = wrap!.getBoundingClientRect();
-        // Where in the parent space is the cursor?
-        const cursorX = e.clientX - rect.left + t.panX;
-        const cursorY = e.clientY - rect.top + t.panY;
+        const newZoom = Math.max(0.05, Math.min(32, t.zoom * Math.exp(-e.deltaY * 0.002)));
 
-        const delta = e.deltaY;
-        const k = 0.002;
-        const newZoom = Math.max(0.05, Math.min(32, t.zoom * Math.exp(-delta * k)));
-        // Adjust pan so the doc point under cursor is unchanged.
-        const scale = newZoom / t.zoom;
-        const newPanX = cursorX - scale * (cursorX - t.panX) - t.panX + t.panX;
-        const newPanY = cursorY - scale * (cursorY - t.panY) - t.panY + t.panY;
-
-        // Simpler derivation: keep (cursorX - panX) / zoom constant.
-        const docX = (e.clientX - (rect.left - t.panX)) / t.zoom;
-        const docY = (e.clientY - (rect.top  - t.panY)) / t.zoom;
-        const nextPanX = e.clientX - (rect.left) - docX * newZoom + t.panX - t.panX;
-        const nextPanY = e.clientY - (rect.top)  - docY * newZoom + t.panY - t.panY;
+        const docX = (e.clientX - rect.left) / t.zoom;
+        const docY = (e.clientY - rect.top)  / t.zoom;
+        const nextPanX = e.clientX - (rect.left - t.panX) - docX * newZoom;
+        const nextPanY = e.clientY - (rect.top  - t.panY) - docY * newZoom;
 
         applyTransform({ panX: nextPanX, panY: nextPanY, zoom: newZoom });
       } else {

@@ -70,6 +70,52 @@ export function Toolbar({ engine, state, onHelpOpen, onNewDoc, onOpenFile, onExp
         </label>
       )}
 
+      {/* Brush options */}
+      {state.tool === "brush" && (
+        <>
+          <label className="paint-toolbar__label" title={`Smoothing: ${state.brush.smoothing}`}>
+            <span>Smooth</span>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={state.brush.smoothing}
+              onChange={(e) => engine.setBrushOption("smoothing", Number(e.target.value))}
+              className="paint-toolbar__range"
+            />
+          </label>
+          <label className="paint-toolbar__label" title={`Thinning: ${state.brush.thinning}`}>
+            <span>Thin</span>
+            <input
+              type="range"
+              min={-1}
+              max={1}
+              step={0.05}
+              value={state.brush.thinning}
+              onChange={(e) => engine.setBrushOption("thinning", Number(e.target.value))}
+              className="paint-toolbar__range"
+            />
+          </label>
+          <label className="paint-toolbar__label" title="Taper start">
+            <input
+              type="checkbox"
+              checked={!!state.brush.taperStart}
+              onChange={(e) => engine.setBrushOption("taperStart", e.target.checked)}
+            />
+            <span>Taper↑</span>
+          </label>
+          <label className="paint-toolbar__label" title="Taper end">
+            <input
+              type="checkbox"
+              checked={!!state.brush.taperEnd}
+              onChange={(e) => engine.setBrushOption("taperEnd", e.target.checked)}
+            />
+            <span>Taper↓</span>
+          </label>
+        </>
+      )}
+
       {/* Eraser mode */}
       {state.tool === "eraser" && (
         <label className="paint-toolbar__label">
