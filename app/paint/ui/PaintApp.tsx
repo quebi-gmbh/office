@@ -5,11 +5,14 @@
  */
 import { useCallback, useRef, useState, useEffect } from "react";
 import { usePaintEngine } from "~/paint/hooks/usePaintEngine";
+import { useShortcuts } from "~/paint/hooks/useShortcuts";
 import { Toolbar } from "~/paint/ui/Toolbar";
 import { TextOverlay } from "~/paint/ui/TextOverlay";
+import { HelpModal } from "~/paint/ui/HelpModal";
 
 export function PaintApp() {
   const { engine, state, mainRef, previewRef } = usePaintEngine();
+  const { helpOpen, setHelpOpen } = useShortcuts(engine);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [canvasScale, setCanvasScale] = useState(1);
 
@@ -48,7 +51,6 @@ export function PaintApp() {
 
   const onPointerLeave = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>) => {
-      // Only cancel if no button is held (no active drag).
       if (e.buttons === 0) return;
       engine.cancelDrag();
     },
@@ -60,20 +62,18 @@ export function PaintApp() {
 
   return (
     <section className="paint-app">
-      <Toolbar engine={engine} state={state} />
+      <Toolbar engine={engine} state={state} onHelpOpen={() => setHelpOpen(true)} />
       <div
         ref={wrapRef}
         className={`paint-canvas-wrap${isTransparent ? " paint-canvas-wrap--checker" : ""}`}
         style={{ aspectRatio: `${width} / ${height}` }}
       >
-        {/* main canvas — committed pixels */}
         <canvas
           ref={mainRef}
           width={width}
           height={height}
           className="paint-canvas paint-canvas-main"
         />
-        {/* preview canvas — in-progress strokes and shape rubber-bands */}
         <canvas
           ref={previewRef}
           width={width}
@@ -85,12 +85,10 @@ export function PaintApp() {
           onPointerUp={onPointerUp}
           onPointerLeave={onPointerLeave}
         />
-        {/* Text overlay — shown when text tool is active and a position is clicked */}
         {state.textOverlay && (
           <TextOverlay engine={engine} state={state} canvasScale={canvasScale} />
         )}
       </div>
-      {/* Status bar — expanded in #29; minimal here */}
       <footer className="paint-statusbar">
         <span>{state.tool}</span>
         {state.cursorDoc && (
@@ -100,6 +98,7 @@ export function PaintApp() {
         )}
         <span>{width} × {height}</span>
       </footer>
+      {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
     </section>
   );
 }

@@ -8,6 +8,7 @@ import type { EngineState, ToolId } from "~/paint/lib/types";
 interface ToolbarProps {
   engine: Engine;
   state: EngineState;
+  onHelpOpen(): void;
 }
 
 const TOOL_BUTTONS: Array<{ id: ToolId; label: string; title: string }> = [
@@ -24,7 +25,7 @@ const TOOL_BUTTONS: Array<{ id: ToolId; label: string; title: string }> = [
 
 const SHAPE_TOOLS = new Set<ToolId>(["line", "rect", "ellipse"]);
 
-export function Toolbar({ engine, state }: ToolbarProps) {
+export function Toolbar({ engine, state, onHelpOpen }: ToolbarProps) {
   function download() {
     const canvas = document.querySelector<HTMLCanvasElement>(".paint-canvas-main");
     if (!canvas) return;
@@ -190,6 +191,17 @@ export function Toolbar({ engine, state }: ToolbarProps) {
       </button>
       <button type="button" className="paint-toolbar__btn" onClick={download} title="Download as PNG">
         ↓ PNG
+      </button>
+
+      <div className="paint-toolbar__sep" />
+
+      <button
+        type="button"
+        className="paint-toolbar__btn"
+        title="Keyboard shortcuts (?)"
+        onClick={onHelpOpen}
+      >
+        ?
       </button>
     </header>
   );
