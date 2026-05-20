@@ -64,9 +64,13 @@ export function PaintApp() {
         engine.store.setState((s) => ({ ...s, zoom: 1, panX: 0, panY: 0 }));
       }
     };
-    // Fit the canvas to the viewport on first mount.
-    engine.fitViewport();
   }, [engine, viewport]);
+
+  // Fit the canvas to the viewport once on mount only.
+  // Kept in a separate effect with [] deps so calling setState inside
+  // fitViewport cannot trigger this effect again.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { engine.fitViewport?.(); }, []);
 
   // ─── Export wiring ─────────────────────────────────────────────────────────
 

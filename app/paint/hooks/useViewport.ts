@@ -22,7 +22,7 @@
  *
  * Pinch cancels the active tool (calls engine.cancelDrag()).
  */
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useMemo } from "react";
 import type { Engine } from "~/paint/engine";
 
 interface Transform {
@@ -243,10 +243,16 @@ export function useViewport(engine: Engine): UseViewportResult {
   // Expose fit/oneToOne for the toolbar and shortcuts to call.
   // We need to patch the engine to support viewport shortcuts.
 
-  return {
-    wrapRef,
-    cssTransform: (t: Transform) => `translate(${t.panX}px, ${t.panY}px) scale(${t.zoom})`,
-    fit,
-    oneToOne,
-  };
+  // Stable object — only recreated when fit/oneToOne callbacks change (i.e. when
+  // engine changes), NOT on every render.  Without useMemo the returned object
+  // is a new reference each render, making effects that depend on it loop.
+  return useMemo(
+    () => ({
+      wrapRef,
+      cssTransform: (t: Transform) => `translate(${t.panX}px, ${t.panY}px) scale(${t.zoom})`,
+      fit,
+      oneToOne,
+    }),
+    [fit, oneToOne],
+  );
 }
