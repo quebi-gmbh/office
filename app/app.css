@@ -110,46 +110,459 @@ a:hover {
   resize: vertical;
 }
 
-.paint {
+/* ─── Paint app ──────────────────────────────────────────────────────────── */
+
+.paint-app {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.5rem;
+  width: 100%;
+  /* Use as much vertical space as possible. The outer canvas div grows to fill. */
+  min-height: calc(100vh - 200px);
 }
-.paint__bar {
+
+/* ─── Toolbar ─────────────────────────────────────────────────────────────── */
+
+.paint-toolbar {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.5rem;
   flex-wrap: wrap;
-}
-.paint__bar h1 {
-  margin: 0 1rem 0 0;
-  font-size: 1.25rem;
-}
-.paint__bar label {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  color: var(--color-muted);
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-card);
   font-size: 0.85rem;
 }
-.paint__bar button {
-  padding: 0.35rem 0.75rem;
+
+.paint-toolbar__title {
+  margin: 0 0.5rem 0 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+/* Tool buttons */
+.paint-toolbar__tools {
+  display: flex;
+  gap: 2px;
+}
+
+.paint-toolbar__tool {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: none;
+  color: var(--color-fg);
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 80ms, border-color 80ms;
+}
+.paint-toolbar__tool:hover { background: var(--color-bg); border-color: var(--color-border); }
+.paint-toolbar__tool.is-active {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
+}
+
+/* Separator */
+.paint-toolbar__sep {
+  width: 1px;
+  align-self: stretch;
+  background: var(--color-border);
+  margin: 0 0.15rem;
+}
+
+/* Labels + range */
+.paint-toolbar__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--color-muted);
+}
+
+.paint-toolbar__range {
+  width: 80px;
+  cursor: pointer;
+}
+
+.paint-toolbar__value {
+  min-width: 2ch;
+  text-align: right;
+  color: var(--color-fg);
+  font-variant-numeric: tabular-nums;
+}
+
+.paint-toolbar__select {
+  padding: 0.2rem 0.4rem;
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+/* Colour pickers */
+.paint-toolbar__colours {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.paint-toolbar__colour-label {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  cursor: pointer;
+}
+
+.paint-toolbar__colour-name {
+  font-size: 0.7rem;
+  color: var(--color-muted);
+  line-height: 1;
+}
+
+.paint-toolbar__colour-input {
+  width: 28px;
+  height: 24px;
+  padding: 1px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+}
+
+/* Generic toolbar button */
+.paint-toolbar__btn {
+  padding: 0.25rem 0.6rem;
   border: 1px solid var(--color-border);
   border-radius: 6px;
   background: var(--color-card);
   color: var(--color-fg);
   cursor: pointer;
+  font-size: 0.82rem;
+  white-space: nowrap;
+  transition: border-color 80ms;
 }
-.paint__bar button:hover {
-  border-color: var(--color-accent);
-}
-.paint__canvas {
-  width: 100%;
-  height: auto;
-  aspect-ratio: 16 / 9;
+.paint-toolbar__btn:hover:not(:disabled) { border-color: var(--color-accent); }
+.paint-toolbar__btn:disabled { opacity: 0.4; cursor: default; }
+
+/* ─── Canvas outer / wrap ─────────────────────────────────────────────────── */
+
+/* Scrollable container that holds the zoomable canvas wrap. */
+.paint-canvas-outer {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  min-height: 320px;
   border: 1px solid var(--color-border);
   border-radius: 10px;
-  background: white;
+  background: var(--color-bg);
+}
+
+.paint-canvas-wrap {
+  position: absolute;
+  /* width/height set inline from doc dimensions; transform via viewport hook */
+  border: 1px solid var(--color-border);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+  background: #fff;
+  will-change: transform;
+}
+
+/* Checkerboard for transparent-background documents */
+.paint-canvas-wrap--checker {
+  background-image:
+    linear-gradient(45deg, #ccc 25%, transparent 25%),
+    linear-gradient(-45deg, #ccc 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #ccc 75%),
+    linear-gradient(-45deg, transparent 75%, #ccc 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  background-color: #fff;
+}
+
+.paint-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
+/* Preview canvas sits on top, receives all pointer events. */
+.paint-canvas-preview {
   touch-action: none;
-  cursor: crosshair;
+  /* cursor is set inline by the active tool */
+}
+
+/* Main canvas is underneath; it never receives pointer events directly. */
+.paint-canvas-main {
+  pointer-events: none;
+}
+
+/* ─── Status bar ──────────────────────────────────────────────────────────── */
+
+.paint-statusbar {
+  display: flex;
+  gap: 1.5rem;
+  align-items: center;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.78rem;
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-card);
+  min-height: 1.6rem;
+}
+
+.paint-statusbar__sep { color: var(--color-border); }
+.paint-statusbar__tool { color: var(--color-fg); font-weight: 500; }
+
+/* New-doc modal fields */
+.paint-modal__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.paint-modal__field-label {
+  font-size: 0.78rem;
+  color: var(--color-muted);
+}
+.paint-modal__input {
+  width: 90px;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-size: 0.9rem;
+}
+
+/* ─── Text overlay ────────────────────────────────────────────────────────── */
+
+.paint-text-overlay {
+  /* Positioned absolutely inside .paint-canvas-wrap by inline styles. */
+  /* A 1px dashed border hints the active region without obscuring the canvas. */
+  border: 1px dashed rgba(0, 0, 0, 0.35);
+  padding: 0;
+  cursor: text;
+  z-index: 10;
+  /* Ensure the element doesn't inherit any host page text styles. */
+  background: transparent;
+  user-select: text;
+}
+
+/* ─── Help modal ──────────────────────────────────────────────────────────── */
+
+.paint-modal {
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-card);
+  color: var(--color-fg);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  max-width: 520px;
+  width: 90vw;
+  max-height: 80vh;
+  overflow: hidden;
+}
+
+.paint-modal::backdrop {
+  background: rgba(0,0,0,0.4);
+  backdrop-filter: blur(2px);
+}
+
+.paint-modal__content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-height: 80vh;
+}
+
+.paint-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem 0.75rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.paint-modal__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.paint-modal__close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-muted);
+  font-size: 1rem;
+  padding: 0.25rem;
+  border-radius: 4px;
+  line-height: 1;
+}
+.paint-modal__close:hover { color: var(--color-fg); }
+
+.paint-modal__body {
+  overflow-y: auto;
+  padding: 0.75rem 1.25rem 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+}
+
+.paint-modal__group {
+  flex: 1 1 180px;
+}
+
+.paint-modal__group-title {
+  margin: 0 0 0.4rem;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-muted);
+}
+
+.paint-modal__table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.84rem;
+}
+
+.paint-modal__table tr + tr td { padding-top: 0.2rem; }
+
+.paint-modal__key {
+  padding-right: 0.75rem;
+  white-space: nowrap;
+}
+
+kbd {
+  display: inline-block;
+  padding: 0.1em 0.4em;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-bg);
+  font-family: ui-monospace, monospace;
+  font-size: 0.8em;
+  line-height: 1.4;
+}
+
+/* ─── Colour swatches ─────────────────────────────────────────────────────── */
+
+.paint-swatches {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* FG / BG overlap pair */
+.paint-swatches__pair {
+  position: relative;
+  width: 44px;
+  height: 36px;
+  flex-shrink: 0;
+}
+
+.paint-swatches__swatch {
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  border: 2px solid var(--color-bg);
+  outline: 1px solid var(--color-border);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: outline-color 80ms;
+}
+.paint-swatches__swatch:hover { outline-color: var(--color-accent); }
+
+.paint-swatches__bg {
+  bottom: 0;
+  right: 0;
+  /* checkerboard behind BG if transparent */
+  background-image:
+    linear-gradient(45deg, #ccc 25%, transparent 25%),
+    linear-gradient(-45deg, #ccc 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #ccc 75%),
+    linear-gradient(-45deg, transparent 75%, #ccc 75%);
+  background-size: 8px 8px;
+  background-position: 0 0, 0 4px, 4px -4px, -4px 0;
+  background-color: #fff;
+}
+
+.paint-swatches__fg {
+  top: 0;
+  left: 0;
+  z-index: 1;
+}
+
+.paint-swatches__swap {
+  position: absolute;
+  bottom: 0;
+  left: 30px;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  background: var(--color-card);
+  color: var(--color-fg);
+  cursor: pointer;
+  font-size: 10px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+}
+.paint-swatches__swap:hover { border-color: var(--color-accent); }
+
+/* Recent colours strip */
+.paint-swatches__recents {
+  display: flex;
+  gap: 2px;
+  flex-wrap: wrap;
+  max-width: 120px;
+}
+
+.paint-swatches__recent {
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--color-border);
+  border-radius: 2px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: outline 80ms;
+}
+.paint-swatches__recent:hover {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+/* ─── Restore banner ──────────────────────────────────────────────────────── */
+
+.paint-restore-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-accent);
+  border-radius: 8px;
+  background: var(--color-card);
+  font-size: 0.88rem;
+}
+
+.paint-restore-banner__actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-shrink: 0;
 }
