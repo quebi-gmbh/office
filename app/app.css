@@ -15,6 +15,7 @@
   --color-muted: #71717a;
   --color-border: #e4e4e7;
   --color-accent: #1d4ed8;
+  --color-live: #16a34a;
   --color-card: #ffffff;
 
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
@@ -29,6 +30,7 @@
     --color-muted: #a1a1aa;
     --color-border: #27272a;
     --color-accent: #60a5fa;
+    --color-live: #4ade80;
     --color-card: #18181b;
   }
 }
