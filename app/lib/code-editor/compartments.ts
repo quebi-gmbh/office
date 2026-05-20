@@ -16,6 +16,9 @@ import type { EditorView as EditorViewType } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
 import type { CodeSettings } from "./settings";
 import { getThemeExtension, themeCompartment } from "./theme";
+import { loadKeymap } from "./keymaps";
+import { loadMinimap } from "./minimap";
+import { getLinterForLang } from "./linters";
 
 // ── Compartment instances (one per editor, created by createCompartments) ────
 export type CompartmentSet = {
@@ -181,9 +184,50 @@ export function applySettings(
     }
   }
 
-  // Apply font size and line height via editor DOM attributes
-  // (font family is set on the wrapping div, not via a compartment)
+  // Keymap (async — vim / emacs chunk fetched on first use)
+  if (!prev || prev.keymap !== settings.keymap) {
+    loadKeymap(settings.keymap)
+      .then((ext) => {
+        view.dispatch({ effects: comps.keymap.reconfigure(ext) });
+      })
+      .catch(console.error);
+  }
+
+  // Minimap (async — only fetched when first enabled)
+  if (changed("display", "minimap")) {
+    if (settings.display.minimap) {
+      loadMinimap()
+        .then((ext) => {
+          view.dispatch({ effects: comps.minimap.reconfigure(ext) });
+        })
+        .catch(console.error);
+    } else {
+      effects.push(comps.minimap.reconfigure([]));
+    }
+  }
+
+  // Apply synchronous effects
   if (effects.length > 0) {
     view.dispatch({ effects });
   }
+}
+
+// ── applyLinter ───────────────────────────────────────────────────────────────
+
+/**
+ * Reconfigure the linter compartment for the current language.
+ * Called both when the active language changes and when the diagnostics
+ * setting is toggled.
+ */
+export function applyLinter(
+  view: EditorViewType,
+  comps: CompartmentSet,
+  langId: string,
+  enabled: boolean,
+): void {
+  getLinterForLang(langId, enabled)
+    .then((ext) => {
+      view.dispatch({ effects: comps.linter.reconfigure(ext) });
+    })
+    .catch(console.error);
 }

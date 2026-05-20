@@ -94,6 +94,8 @@ type StatusBarProps = {
   eol?: string;
   onIndentClick?: () => void;
   onEolClick?: () => void;
+  /** Active keymap — shown as a badge when not "default" */
+  keymap?: "default" | "vim" | "emacs";
   className?: string;
 };
 
@@ -105,6 +107,7 @@ export function StatusBar({
   eol = "LF",
   onIndentClick,
   onEolClick,
+  keymap = "default",
   className,
 }: StatusBarProps) {
   const status = useEditorStatus(store);
@@ -159,6 +162,13 @@ export function StatusBar({
       >
         {eol}
       </button>
+
+      {/* Keymap indicator (visible only when non-default) */}
+      {keymap !== "default" && (
+        <span className="whitespace-nowrap rounded bg-border px-1.5 py-0.5 font-mono uppercase">
+          {keymap}
+        </span>
+      )}
 
       {/* Encoding (read-only) */}
       <span className="whitespace-nowrap text-muted">UTF-8</span>

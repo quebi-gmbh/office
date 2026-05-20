@@ -220,6 +220,14 @@ export function SettingsDrawer({ open, onClose, initialFocus: _initialFocus }: S
             onChange={(v) => update({ display: { trailingWhitespace: v } })}
           />
         </SettingsRow>
+
+        <SettingsRow label="Show minimap" htmlFor="s-minimap">
+          <Toggle
+            id="s-minimap"
+            checked={settings.display.minimap}
+            onChange={(v) => update({ display: { minimap: v } })}
+          />
+        </SettingsRow>
       </SettingsSection>
 
       {/* ── Files ── */}

@@ -28,6 +28,7 @@ export type CodeSettings = {
     whitespace: boolean;
     trailingWhitespace: boolean;
     stickyScroll: boolean;
+    minimap: boolean;
   };
   files: {
     indent: "spaces" | "tabs";
@@ -64,6 +65,7 @@ export const defaults: CodeSettings = {
     whitespace: false,
     trailingWhitespace: false,
     stickyScroll: false,
+    minimap: false,
   },
   files: {
     indent: "spaces",

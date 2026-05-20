@@ -19,6 +19,7 @@ import {
   createCompartments,
   buildInitialExtensions,
   applySettings as applySettingsImpl,
+  applyLinter,
 } from "./compartments";
 import type { CodeSettings } from "./settings";
 import { defaults } from "./settings";
@@ -36,9 +37,12 @@ export type UseEditorReturn = {
 
 export function useEditor(initialSettings: CodeSettings = defaults): UseEditorReturn {
   const viewRef = useRef<EditorView | null>(null);
+  // Track latest settings so async ops (language change) can read current state
+  const settingsRef = useRef<CodeSettings>(initialSettings);
 
-  // Language state
+  // Language state — also kept in a ref so async callbacks see latest value
   const [activeLang, setActiveLang] = useState<Lang>(noLanguage);
+  const activeLangRef = useRef<Lang>(noLanguage);
 
   // Stable per-editor instances — created once
   const langCompartment = useMemo(() => new Compartment(), []);
@@ -71,17 +75,25 @@ export function useEditor(initialSettings: CodeSettings = defaults): UseEditorRe
       const view = viewRef.current;
       if (view) {
         view.dispatch({ effects: langCompartment.reconfigure(ext) });
+        // Update linter for the new language using current diagnostics setting
+        applyLinter(view, comps, lang.id, settingsRef.current.editor.diagnostics);
       }
+      activeLangRef.current = lang;
       setActiveLang(lang);
     },
-    [langCompartment],
+    [langCompartment, comps],
   );
 
   const applySettings = useCallback(
     (settings: CodeSettings, prev?: CodeSettings) => {
       const view = viewRef.current;
       if (!view) return;
+      settingsRef.current = settings;
       applySettingsImpl(view, comps, settings, prev);
+      // Re-apply linter when diagnostics toggle changes
+      if (!prev || prev.editor.diagnostics !== settings.editor.diagnostics) {
+        applyLinter(view, comps, activeLangRef.current.id, settings.editor.diagnostics);
+      }
     },
     [comps],
   );

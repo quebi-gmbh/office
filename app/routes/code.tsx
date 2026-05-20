@@ -1,7 +1,8 @@
 /**
  * /code — CodeMirror-based code editor
  *
- * Sub-issues #20 / #21 / #22 — Foundation, Settings, Import & Export
+ * Sub-issues #20 / #21 / #22 / #23 — Foundation, Settings, Import & Export,
+ * Power features (command palette, keymaps, minimap, linters)
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import CodeMirror from "@uiw/react-codemirror";
@@ -12,6 +13,7 @@ import { SettingsDrawer } from "~/lib/code-editor/settings-drawer";
 import { FileMenu } from "~/lib/code-editor/file-menu";
 import type { FileMenuAction } from "~/lib/code-editor/file-menu";
 import { UrlModal } from "~/lib/code-editor/url-modal";
+import { CommandPalette } from "~/components/CommandPalette";
 import { useToast } from "~/components/Toast";
 import {
   openFile,
@@ -21,6 +23,7 @@ import {
   defaultFilename,
   copyText,
   copyAsMarkdown,
+  copyAsHtml,
   shareUrl,
   decodeShareHash,
   printDoc,
@@ -41,6 +44,7 @@ function CodeEditor() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerFocus, setDrawerFocus] = useState<string | undefined>();
   const [urlModalOpen, setUrlModalOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [fileState, setFileState] = useState<FileState>({
     name: null,
@@ -50,7 +54,7 @@ function CodeEditor() {
   const editorContainerRef = useRef<HTMLDivElement>(null);
   const { show: showToast, ToastContainer } = useToast();
 
-  const { extensions, statusStore, activeLang, setLanguage, applySettings, onCreateEditor } =
+  const { extensions, statusStore, activeLang, setLanguage, applySettings, onCreateEditor, viewRef } =
     useEditor(settings);
 
   // ── Load draft + hash share + restore language ────────────────────────────
@@ -196,6 +200,7 @@ function CodeEditor() {
     const handler = (e: KeyboardEvent) => {
       const mod = e.ctrlKey || e.metaKey;
       if (mod && e.key === ",") { e.preventDefault(); setDrawerOpen(true); return; }
+      if (mod && e.shiftKey && (e.key === "P" || e.key === "p")) { e.preventDefault(); setPaletteOpen(true); return; }
       if (mod && e.key === "o") { e.preventDefault(); handleFileAction("open"); return; }
       if (mod && e.key === "s") { e.preventDefault(); handleFileAction("save"); return; }
       if (mod && e.shiftKey && e.key === "C") { e.preventDefault(); copyText(editorContainerRef.current as unknown as import("@codemirror/view").EditorView); return; }
@@ -337,6 +342,7 @@ function CodeEditor() {
         eol={eolLabel}
         onIndentClick={openAtIndent}
         onEolClick={openAtEol}
+        keymap={settings.keymap}
         className="px-1 py-0.5 text-xs text-muted"
       />
 
@@ -350,6 +356,26 @@ function CodeEditor() {
         open={urlModalOpen}
         onClose={() => setUrlModalOpen(false)}
         onLoad={(text, lang, name) => openDocument(text, lang, name)}
+      />
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        ctx={{
+          fileAction: handleFileAction,
+          setLanguage: handleLanguageChange,
+          openSettings: (focus) => {
+            setDrawerFocus(focus);
+            setDrawerOpen(true);
+          },
+          copyMarkdown: () => {
+            const view = viewRef.current;
+            if (view) copyAsMarkdown(view, activeLang).catch(console.error);
+          },
+          copyHtml: () => {
+            const view = viewRef.current;
+            if (view) copyAsHtml(view).catch(console.error);
+          },
+        }}
       />
       <ToastContainer />
     </section>
