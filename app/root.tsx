@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { Link, NavLink, Outlet } from "react-router";
 
 export default function Root() {
@@ -29,7 +30,13 @@ export default function Root() {
         </nav>
       </header>
       <main className="mx-auto w-full max-w-[1100px] flex-1 px-6 py-8">
-        <Outlet />
+        <Suspense
+          fallback={
+            <div className="h-32 rounded-xl border border-border bg-card animate-pulse" />
+          }
+        >
+          <Outlet />
+        </Suspense>
       </main>
       <footer className="flex flex-wrap justify-center gap-x-2 gap-y-1 border-t border-border px-6 py-4 text-sm text-muted">
         <span>made with stubbornness and Bun</span>

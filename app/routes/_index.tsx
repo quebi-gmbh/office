@@ -72,7 +72,7 @@ const tools: Tool[] = [
   {
     to: "/code",
     name: "Code editor",
-    blurb: "A lightweight code editor with syntax highlighting.",
+    blurb: "Full-featured CodeMirror 6 editor — 20+ languages, linting, Prettier formatting, Vim/Emacs, command palette, and share-by-URL.",
     status: "live",
     icon: <CodeIcon />,
   },

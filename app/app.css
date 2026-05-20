@@ -59,6 +59,21 @@ a:hover {
 }
 
 /* ---------------------------------------------------------------------------
+   Print styles — show only the editor, keep syntax colours.
+   --------------------------------------------------------------------------- */
+
+@media print {
+  body > * { display: none !important; }
+  /* The editor section is rendered into #root > div > main */
+  #root header,
+  #root footer,
+  #root nav { display: none !important; }
+  #root main { padding: 0 !important; max-width: none !important; }
+  .cm-editor { height: auto !important; overflow: visible !important; }
+  .cm-scroller { overflow: visible !important; }
+}
+
+/* ---------------------------------------------------------------------------
    Legacy BEM rules for views not yet migrated to Tailwind utilities.
    Carried over from the old public/styles.css minus the :root tokens
    (which now live in @theme above). Remove these rules as each view is
