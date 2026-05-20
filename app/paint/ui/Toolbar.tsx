@@ -9,6 +9,7 @@ interface ToolbarProps {
   engine: Engine;
   state: EngineState;
   onHelpOpen(): void;
+  onNewDoc(): void;
 }
 
 const TOOL_BUTTONS: Array<{ id: ToolId; label: string; title: string }> = [
@@ -25,7 +26,7 @@ const TOOL_BUTTONS: Array<{ id: ToolId; label: string; title: string }> = [
 
 const SHAPE_TOOLS = new Set<ToolId>(["line", "rect", "ellipse"]);
 
-export function Toolbar({ engine, state, onHelpOpen }: ToolbarProps) {
+export function Toolbar({ engine, state, onHelpOpen, onNewDoc }: ToolbarProps) {
   function download() {
     const canvas = document.querySelector<HTMLCanvasElement>(".paint-canvas-main");
     if (!canvas) return;
@@ -36,14 +37,6 @@ export function Toolbar({ engine, state, onHelpOpen }: ToolbarProps) {
     const ts = now.toISOString().slice(0, 16).replace("T", "-").replace(":", "");
     a.download = `paint-${ts}.png`;
     a.click();
-  }
-
-  function clear() {
-    engine.newDocument(
-      state.doc.width,
-      state.doc.height,
-      state.doc.bgWasTransparent ? "transparent" : state.bg,
-    );
   }
 
   return (
@@ -186,7 +179,7 @@ export function Toolbar({ engine, state, onHelpOpen }: ToolbarProps) {
       <div className="paint-toolbar__sep" />
 
       {/* Actions */}
-      <button type="button" className="paint-toolbar__btn" onClick={clear} title="New document">
+      <button type="button" className="paint-toolbar__btn" onClick={onNewDoc} title="New document">
         New
       </button>
       <button type="button" className="paint-toolbar__btn" onClick={download} title="Download as PNG">

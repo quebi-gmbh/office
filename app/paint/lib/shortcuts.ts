@@ -131,6 +131,28 @@ export const SHORTCUTS: Shortcut[] = [
     },
   },
 
+  // ── View
+  {
+    id: "zoom-fit",
+    keys: "Mod+0",
+    label: "Fit canvas to window",
+    group: "view",
+    run(engine, ev) {
+      ev.preventDefault();
+      engine.fitViewport?.();
+    },
+  },
+  {
+    id: "zoom-100",
+    keys: "Mod+1",
+    label: "100% zoom",
+    group: "view",
+    run(engine, ev) {
+      ev.preventDefault();
+      engine.resetZoom?.();
+    },
+  },
+
   // ── Help (no run needed — handled directly in useShortcuts by id)
   {
     id: "help",

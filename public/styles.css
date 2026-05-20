@@ -132,8 +132,9 @@ a:hover { color: var(--accent); }
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  /* Allow the canvas to use more horizontal space than the default 1100px max. */
   width: 100%;
+  /* Use as much vertical space as possible. The outer canvas div grows to fill. */
+  min-height: calc(100vh - 200px);
 }
 
 /* ─── Toolbar ─────────────────────────────────────────────────────────────── */
@@ -270,16 +271,26 @@ a:hover { color: var(--accent); }
 .paint-toolbar__btn:hover:not(:disabled) { border-color: var(--accent); }
 .paint-toolbar__btn:disabled { opacity: 0.4; cursor: default; }
 
-/* ─── Canvas wrap ─────────────────────────────────────────────────────────── */
+/* ─── Canvas outer / wrap ─────────────────────────────────────────────────── */
 
-.paint-canvas-wrap {
+/* Scrollable container that holds the zoomable canvas wrap. */
+.paint-canvas-outer {
+  flex: 1;
   position: relative;
-  width: 100%;
-  /* aspect-ratio is set inline from doc dimensions */
+  overflow: hidden;
+  min-height: 320px;
   border: 1px solid var(--border);
   border-radius: 10px;
-  overflow: hidden;
+  background: var(--bg);
+}
+
+.paint-canvas-wrap {
+  position: absolute;
+  /* width/height set inline from doc dimensions; transform via viewport hook */
+  border: 1px solid var(--border);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
   background: #fff;
+  will-change: transform;
 }
 
 /* Checkerboard for transparent-background documents */
@@ -297,8 +308,6 @@ a:hover { color: var(--accent); }
 .paint-canvas {
   position: absolute;
   inset: 0;
-  width: 100%;
-  height: 100%;
   display: block;
 }
 
@@ -327,6 +336,29 @@ a:hover { color: var(--accent); }
   border-radius: 6px;
   background: var(--card);
   min-height: 1.6rem;
+}
+
+.paint-statusbar__sep { color: var(--border); }
+.paint-statusbar__tool { color: var(--fg); font-weight: 500; }
+
+/* New-doc modal fields */
+.paint-modal__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.paint-modal__field-label {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.paint-modal__input {
+  width: 90px;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 0.9rem;
 }
 
 /* ─── Text overlay ────────────────────────────────────────────────────────── */

@@ -105,6 +105,9 @@ export interface Engine {
   redo(): void;
   /** Reset to a new document, optionally providing content. */
   newDocument(width: number, height: number, bg: string): void;
+  /** Viewport shortcut callbacks — set by the viewport hook after mount. */
+  fitViewport?(): void;
+  resetZoom?(): void;
   isDragging: boolean;
   dispose(): void;
 }
@@ -455,6 +458,9 @@ export function createEngine(): Engine {
       }));
       initCanvas(width, height, bg);
     },
+
+    fitViewport: undefined,
+    resetZoom: undefined,
 
     dispose() {
       window.removeEventListener("keydown", onKeyDown, true);
