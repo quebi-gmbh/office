@@ -1,64 +1,6 @@
 import type { ReactNode } from "react";
+import { Code2, FileText, Paintbrush } from "lucide-react";
 import { Link } from "react-router";
-
-const CodeIcon = () => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    width="20"
-    height="20"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <polyline points="16 18 22 12 16 6" />
-    <polyline points="8 6 2 12 8 18" />
-  </svg>
-);
-
-const DocIcon = () => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    width="20"
-    height="20"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-    <polyline points="14 2 14 8 20 8" />
-    <line x1="16" y1="13" x2="8" y2="13" />
-    <line x1="16" y1="17" x2="8" y2="17" />
-    <line x1="10" y1="9" x2="8" y2="9" />
-  </svg>
-);
-
-const PaintIcon = () => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    width="20"
-    height="20"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <path d="M12 19l7-7 3 3-7 7-3-3z" />
-    <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" />
-    <path d="M2 2l7.586 7.586" />
-    <circle cx="11" cy="11" r="2" />
-  </svg>
-);
 
 type Tool = {
   to: string;
@@ -74,21 +16,21 @@ const tools: Tool[] = [
     name: "Code editor",
     blurb: "A lightweight code editor with syntax highlighting.",
     status: "live",
-    icon: <CodeIcon />,
+    icon: <Code2 size={20} aria-hidden />,
   },
   {
     to: "/doc",
     name: "Document editor",
     blurb: "A rich-text editor for notes and documents.",
     status: "live",
-    icon: <DocIcon />,
+    icon: <FileText size={20} aria-hidden />,
   },
   {
     to: "/paint",
     name: "Paint",
     blurb: "A simple Paint-like drawing canvas.",
     status: "live",
-    icon: <PaintIcon />,
+    icon: <Paintbrush size={20} aria-hidden />,
   },
 ];
 
