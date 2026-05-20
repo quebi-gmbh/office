@@ -15,18 +15,21 @@ const tools = [
 
 export default function Index() {
   return (
-    <section className="landing">
-      <h1 className="landing__title">office.quebi.de</h1>
-      <p className="landing__lede">
+    <section>
+      <h1 className="mb-2 text-3xl tracking-tight">office.quebi.de</h1>
+      <p className="mb-8 max-w-[60ch] text-muted">
         A small collection of open-source, browser-based office tools. No login,
         no backend — everything runs in your browser and stays on your device.
       </p>
-      <ul className="landing__tools">
+      <ul className="grid list-none grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4 p-0">
         {tools.map((t) => (
           <li key={t.to}>
-            <Link to={t.to} className="tool-card">
-              <h2>{t.name}</h2>
-              <p>{t.blurb}</p>
+            <Link
+              to={t.to}
+              className="block rounded-xl border border-border bg-card p-5 transition duration-150 hover:-translate-y-px hover:border-accent"
+            >
+              <h2 className="mb-1 text-[1.05rem]">{t.name}</h2>
+              <p className="text-sm text-muted">{t.blurb}</p>
             </Link>
           </li>
         ))}
