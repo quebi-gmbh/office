@@ -126,32 +126,205 @@ a:hover { color: var(--accent); }
   resize: vertical;
 }
 
-/* paint */
-.paint { display: flex; flex-direction: column; gap: 0.75rem; }
-.paint__bar {
+/* ─── Paint app ──────────────────────────────────────────────────────────── */
+
+.paint-app {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  /* Allow the canvas to use more horizontal space than the default 1100px max. */
+  width: 100%;
+}
+
+/* ─── Toolbar ─────────────────────────────────────────────────────────────── */
+
+.paint-toolbar {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.5rem;
   flex-wrap: wrap;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  font-size: 0.85rem;
 }
-.paint__bar h1 { margin: 0 1rem 0 0; font-size: 1.25rem; }
-.paint__bar label { display: inline-flex; align-items: center; gap: 0.4rem; color: var(--muted); font-size: 0.85rem; }
-.paint__bar button {
-  padding: 0.35rem 0.75rem;
+
+.paint-toolbar__title {
+  margin: 0 0.5rem 0 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+/* Tool buttons */
+.paint-toolbar__tools {
+  display: flex;
+  gap: 2px;
+}
+
+.paint-toolbar__tool {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: none;
+  color: var(--fg);
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 80ms, border-color 80ms;
+}
+.paint-toolbar__tool:hover { background: var(--bg); border-color: var(--border); }
+.paint-toolbar__tool.is-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* Separator */
+.paint-toolbar__sep {
+  width: 1px;
+  align-self: stretch;
+  background: var(--border);
+  margin: 0 0.15rem;
+}
+
+/* Labels + range */
+.paint-toolbar__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--muted);
+}
+
+.paint-toolbar__range {
+  width: 80px;
+  cursor: pointer;
+}
+
+.paint-toolbar__value {
+  min-width: 2ch;
+  text-align: right;
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+
+.paint-toolbar__select {
+  padding: 0.2rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+/* Colour pickers */
+.paint-toolbar__colours {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.paint-toolbar__colour-label {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  cursor: pointer;
+}
+
+.paint-toolbar__colour-name {
+  font-size: 0.7rem;
+  color: var(--muted);
+  line-height: 1;
+}
+
+.paint-toolbar__colour-input {
+  width: 28px;
+  height: 24px;
+  padding: 1px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+}
+
+/* Generic toolbar button */
+.paint-toolbar__btn {
+  padding: 0.25rem 0.6rem;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--card);
   color: var(--fg);
   cursor: pointer;
+  font-size: 0.82rem;
+  white-space: nowrap;
+  transition: border-color 80ms;
 }
-.paint__bar button:hover { border-color: var(--accent); }
-.paint__canvas {
+.paint-toolbar__btn:hover:not(:disabled) { border-color: var(--accent); }
+.paint-toolbar__btn:disabled { opacity: 0.4; cursor: default; }
+
+/* ─── Canvas wrap ─────────────────────────────────────────────────────────── */
+
+.paint-canvas-wrap {
+  position: relative;
   width: 100%;
-  height: auto;
-  aspect-ratio: 16 / 9;
+  /* aspect-ratio is set inline from doc dimensions */
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: white;
+  overflow: hidden;
+  background: #fff;
+}
+
+/* Checkerboard for transparent-background documents */
+.paint-canvas-wrap--checker {
+  background-image:
+    linear-gradient(45deg, #ccc 25%, transparent 25%),
+    linear-gradient(-45deg, #ccc 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #ccc 75%),
+    linear-gradient(-45deg, transparent 75%, #ccc 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  background-color: #fff;
+}
+
+.paint-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Preview canvas sits on top, receives all pointer events. */
+.paint-canvas-preview {
   touch-action: none;
-  cursor: crosshair;
+  /* cursor is set inline by the active tool */
+}
+
+/* Main canvas is underneath; it never receives pointer events directly. */
+.paint-canvas-main {
+  pointer-events: none;
+}
+
+/* ─── Status bar ──────────────────────────────────────────────────────────── */
+
+.paint-statusbar {
+  display: flex;
+  gap: 1.5rem;
+  align-items: center;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+  min-height: 1.6rem;
 }
