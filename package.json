@@ -9,7 +9,7 @@
     "dev": "bun run scripts/dev.ts",
     "build": "bun run scripts/build.ts",
     "generate-routes": "bun run scripts/generate-routes.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "bun run scripts/generate-routes.ts && tsc --noEmit"
   },
   "dependencies": {
     "react": "^19.0.0",
