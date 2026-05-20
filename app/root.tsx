@@ -9,10 +9,16 @@ export default function Root() {
         </Link>
         <nav className="flex gap-4">
           <NavLink
-            to="/text"
+            to="/code"
             className={({ isActive }) => (isActive ? "text-accent" : "")}
           >
-            Text
+            Code
+          </NavLink>
+          <NavLink
+            to="/doc"
+            className={({ isActive }) => (isActive ? "text-accent" : "")}
+          >
+            Doc
           </NavLink>
           <NavLink
             to="/paint"
@@ -25,16 +31,24 @@ export default function Root() {
       <main className="mx-auto w-full max-w-[1100px] flex-1 px-6 py-8">
         <Outlet />
       </main>
-      <footer className="flex justify-center gap-2 border-t border-border px-6 py-4 text-sm text-muted">
+      <footer className="flex flex-wrap justify-center gap-x-2 gap-y-1 border-t border-border px-6 py-4 text-sm text-muted">
+        <span>made with stubbornness and Bun</span>
+        <span aria-hidden="true">·</span>
+        <span>MIT</span>
+        <span aria-hidden="true">·</span>
         <a
-          href="https://github.com/quebi/office"
+          href="https://github.com/quebi-gmbh/office"
           target="_blank"
           rel="noreferrer"
         >
           source on github
         </a>
-        <span>·</span>
-        <span>MIT</span>
+        <span aria-hidden="true">·</span>
+        <span>no cookies</span>
+        <span aria-hidden="true">·</span>
+        <span>no JS frameworks</span>
+        <span aria-hidden="true">·</span>
+        <span>no kidding</span>
       </footer>
     </div>
   );
