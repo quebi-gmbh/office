@@ -328,3 +328,17 @@ a:hover { color: var(--accent); }
   background: var(--card);
   min-height: 1.6rem;
 }
+
+/* ─── Text overlay ────────────────────────────────────────────────────────── */
+
+.paint-text-overlay {
+  /* Positioned absolutely inside .paint-canvas-wrap by inline styles. */
+  /* A 1px dashed border hints the active region without obscuring the canvas. */
+  border: 1px dashed rgba(0, 0, 0, 0.35);
+  padding: 0;
+  cursor: text;
+  z-index: 10;
+  /* Ensure the element doesn't inherit any host page text styles. */
+  background: transparent;
+  user-select: text;
+}

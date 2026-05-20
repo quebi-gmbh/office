@@ -23,6 +23,12 @@ import type {
 import { brush } from "~/paint/tools/brush";
 import { pencil } from "~/paint/tools/pencil";
 import { eraser } from "~/paint/tools/eraser";
+import { line } from "~/paint/tools/line";
+import { rect } from "~/paint/tools/rect";
+import { ellipse } from "~/paint/tools/ellipse";
+import { fill } from "~/paint/tools/fill";
+import { eyedropper } from "~/paint/tools/eyedropper";
+import { text } from "~/paint/tools/text";
 
 // ─── Registry of available tools ────────────────────────────────────────────
 
@@ -30,14 +36,12 @@ const TOOLS: Record<ToolId, Tool> = {
   brush,
   pencil,
   eraser,
-  // Placeholder stubs for tools added in later sub-tasks.
-  // They will be replaced by real implementations in #27.
-  line: { id: "line", cursor: "crosshair", onPointerDown() {}, onPointerMove() {}, onPointerUp() {} },
-  rect: { id: "rect", cursor: "crosshair", onPointerDown() {}, onPointerMove() {}, onPointerUp() {} },
-  ellipse: { id: "ellipse", cursor: "crosshair", onPointerDown() {}, onPointerMove() {}, onPointerUp() {} },
-  fill: { id: "fill", cursor: "crosshair", onPointerDown() {}, onPointerMove() {}, onPointerUp() {} },
-  eyedropper: { id: "eyedropper", cursor: "crosshair", onPointerDown() {}, onPointerMove() {}, onPointerUp() {} },
-  text: { id: "text", cursor: "text", onPointerDown() {}, onPointerMove() {}, onPointerUp() {} },
+  line,
+  rect,
+  ellipse,
+  fill,
+  eyedropper,
+  text,
 };
 
 // ─── Default state ────────────────────────────────────────────────────────────
@@ -66,6 +70,7 @@ const DEFAULT_STATE: EngineState = {
   canRedo: false,
   recentColours: [],
   autosaveAvailable: true,
+  textOverlay: null,
 };
 
 // ─── Engine interface ─────────────────────────────────────────────────────────
@@ -87,6 +92,15 @@ export interface Engine {
   setSize(n: number): void;
   setBrushOption<K extends keyof EngineState["brush"]>(key: K, value: EngineState["brush"][K]): void;
   setEraserMode(mode: "bg" | "erase"): void;
+  setShapeOption<K extends keyof EngineState["shape"]>(key: K, value: EngineState["shape"][K]): void;
+  setFillTolerance(n: number): void;
+  /**
+   * Rasterise a text string onto the main canvas at the current overlay position.
+   * Called by TextOverlay when the user commits (blur / Enter).
+   */
+  commitText(text: string, fontSize: number, fontFamily: string): void;
+  /** Dismiss the text overlay without rasterising. */
+  cancelText(): void;
   undo(): void;
   redo(): void;
   /** Reset to a new document, optionally providing content. */
@@ -290,6 +304,21 @@ export function createEngine(): Engine {
 
     const tool = TOOLS[getState().tool];
     tool.onPointerUp(e, ctx);
+
+    // Text tool signals overlay request via scratch.
+    if (scratch.requestOverlay) {
+      scratch.requestOverlay = false;
+      const s = getState();
+      updateState((st) => ({
+        ...st,
+        textOverlay: {
+          x: scratch.textX as number,
+          y: scratch.textY as number,
+          fontSize: 24,
+          fontFamily: "sans-serif",
+        },
+      }));
+    }
   }
 
   function cancelDrag(): void {
@@ -355,6 +384,37 @@ export function createEngine(): Engine {
 
     setEraserMode(mode) {
       updateState((st) => ({ ...st, eraserMode: mode }));
+    },
+
+    setShapeOption(key, value) {
+      updateState((st) => ({ ...st, shape: { ...st.shape, [key]: value } }));
+    },
+
+    setFillTolerance(n) {
+      updateState((st) => ({ ...st, fillTolerance: Math.max(0, Math.min(255, n)) }));
+    },
+
+    commitText(textContent, fontSize, fontFamily) {
+      if (!mainCtx) return;
+      const s = getState();
+      if (!s.textOverlay) return;
+
+      const lines = textContent.split("\n");
+      mainCtx.save();
+      mainCtx.font = `${fontSize}px ${fontFamily}`;
+      mainCtx.fillStyle = s.fg;
+      mainCtx.textBaseline = "top";
+      lines.forEach((ln, i) => {
+        mainCtx!.fillText(ln, s.textOverlay!.x, s.textOverlay!.y + i * (fontSize * 1.2));
+      });
+      mainCtx.restore();
+
+      updateState((st) => ({ ...st, textOverlay: null }));
+      pushSnapshot();
+    },
+
+    cancelText() {
+      updateState((st) => ({ ...st, textOverlay: null }));
     },
 
     undo() {

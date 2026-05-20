@@ -53,6 +53,8 @@ export interface EngineState {
   canRedo: boolean;
   recentColours: string[]; // up to 10, most recent first
   autosaveAvailable: boolean;
+  /** When the text tool requests an overlay, this holds the click position in doc space. */
+  textOverlay: { x: number; y: number; fontSize: number; fontFamily: string } | null;
 }
 
 /** Keyboard modifier state, kept in sync by the engine. */
