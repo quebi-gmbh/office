@@ -471,3 +471,94 @@ kbd {
   font-size: 0.8em;
   line-height: 1.4;
 }
+
+/* ─── Colour swatches ─────────────────────────────────────────────────────── */
+
+.paint-swatches {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* FG / BG overlap pair */
+.paint-swatches__pair {
+  position: relative;
+  width: 44px;
+  height: 36px;
+  flex-shrink: 0;
+}
+
+.paint-swatches__swatch {
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  border: 2px solid var(--bg);
+  outline: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: outline-color 80ms;
+}
+.paint-swatches__swatch:hover { outline-color: var(--accent); }
+
+.paint-swatches__bg {
+  bottom: 0;
+  right: 0;
+  /* checkerboard behind BG if transparent */
+  background-image:
+    linear-gradient(45deg, #ccc 25%, transparent 25%),
+    linear-gradient(-45deg, #ccc 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #ccc 75%),
+    linear-gradient(-45deg, transparent 75%, #ccc 75%);
+  background-size: 8px 8px;
+  background-position: 0 0, 0 4px, 4px -4px, -4px 0;
+  background-color: #fff;
+}
+
+.paint-swatches__fg {
+  top: 0;
+  left: 0;
+  z-index: 1;
+}
+
+.paint-swatches__swap {
+  position: absolute;
+  bottom: 0;
+  left: 30px;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--card);
+  color: var(--fg);
+  cursor: pointer;
+  font-size: 10px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+}
+.paint-swatches__swap:hover { border-color: var(--accent); }
+
+/* Recent colours strip */
+.paint-swatches__recents {
+  display: flex;
+  gap: 2px;
+  flex-wrap: wrap;
+  max-width: 120px;
+}
+
+.paint-swatches__recent {
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: outline 80ms;
+}
+.paint-swatches__recent:hover {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}

@@ -13,6 +13,7 @@
  */
 import { createHistory } from "~/paint/lib/history";
 import { createStore } from "~/paint/lib/store";
+import { loadColourPrefs, saveColourPrefs, addToRecents } from "~/paint/lib/colourStore";
 import type {
   EngineState,
   Modifiers,
@@ -244,8 +245,10 @@ export function createEngine(): Engine {
 
   function setFgInternal(c: string): void {
     updateState((st) => {
-      const recents = [c, ...st.recentColours.filter((x) => x !== c)].slice(0, 10);
-      return { ...st, fg: c, recentColours: recents };
+      const recents = addToRecents(st.recentColours, c);
+      const next = { ...st, fg: c, recentColours: recents };
+      saveColourPrefs({ fg: c, bg: st.bg, recents });
+      return next;
     });
   }
 
@@ -347,6 +350,15 @@ export function createEngine(): Engine {
       mainCtx = mc.getContext("2d")!;
       previewCtx = pc.getContext("2d")!;
 
+      // Restore persisted colour preferences.
+      const colourPrefs = loadColourPrefs();
+      updateState((st) => ({
+        ...st,
+        fg: colourPrefs.fg,
+        bg: colourPrefs.bg,
+        recentColours: colourPrefs.recents,
+      }));
+
       const s = getState();
       initCanvas(s.doc.width, s.doc.height, s.doc.bgWasTransparent ? "transparent" : s.bg);
 
@@ -371,7 +383,10 @@ export function createEngine(): Engine {
     setFg: setFgInternal,
 
     setBg(c) {
-      updateState((st) => ({ ...st, bg: c }));
+      updateState((st) => {
+        saveColourPrefs({ fg: st.fg, bg: c, recents: st.recentColours });
+        return { ...st, bg: c };
+      });
     },
 
     setSize(n) {

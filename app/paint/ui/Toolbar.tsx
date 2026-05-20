@@ -4,6 +4,7 @@
  */
 import type { Engine } from "~/paint/engine";
 import type { EngineState, ToolId } from "~/paint/lib/types";
+import { ColourSwatches } from "~/paint/ui/ColourSwatches";
 
 interface ToolbarProps {
   engine: Engine;
@@ -133,26 +134,7 @@ export function Toolbar({ engine, state, onHelpOpen, onNewDoc }: ToolbarProps) {
       <div className="paint-toolbar__sep" />
 
       {/* Colours */}
-      <div className="paint-toolbar__colours">
-        <label className="paint-toolbar__colour-label" title="Foreground colour">
-          <span className="paint-toolbar__colour-name">FG</span>
-          <input
-            type="color"
-            value={state.fg}
-            onChange={(e) => engine.setFg(e.target.value)}
-            className="paint-toolbar__colour-input"
-          />
-        </label>
-        <label className="paint-toolbar__colour-label" title="Background colour">
-          <span className="paint-toolbar__colour-name">BG</span>
-          <input
-            type="color"
-            value={state.bg === "transparent" ? "#ffffff" : state.bg}
-            onChange={(e) => engine.setBg(e.target.value)}
-            className="paint-toolbar__colour-input"
-          />
-        </label>
-      </div>
+      <ColourSwatches engine={engine} state={state} />
 
       <div className="paint-toolbar__sep" />
 
