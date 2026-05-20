@@ -46,6 +46,10 @@ export type CodeSettings = {
     mode: "auto" | "light" | "dark";
   };
   keymap: "default" | "vim" | "emacs";
+  format: {
+    /** Run Prettier automatically before every save / download */
+    onSave: boolean;
+  };
 };
 
 export const defaults: CodeSettings = {
@@ -81,6 +85,9 @@ export const defaults: CodeSettings = {
     mode: "auto",
   },
   keymap: "default",
+  format: {
+    onSave: false,
+  },
 };
 
 /**

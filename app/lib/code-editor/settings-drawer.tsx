@@ -329,6 +329,21 @@ export function SettingsDrawer({ open, onClose, initialFocus: _initialFocus }: S
         </SettingsRow>
       </SettingsSection>
 
+      {/* ── Format ── */}
+      <SettingsSection title="Format">
+        <SettingsRow
+          label="Format on save"
+          description="Run Prettier before each save / download (JS, TS, CSS, HTML, Markdown, YAML, JSON)"
+          htmlFor="s-formatOnSave"
+        >
+          <Toggle
+            id="s-formatOnSave"
+            checked={settings.format.onSave}
+            onChange={(v) => update({ format: { onSave: v } })}
+          />
+        </SettingsRow>
+      </SettingsSection>
+
       {/* ── Keymap ── */}
       <SettingsSection title="Keymap">
         <SettingsRow label="Key bindings" htmlFor="s-keymap">

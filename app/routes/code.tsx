@@ -1,8 +1,8 @@
 /**
  * /code — CodeMirror-based code editor
  *
- * Sub-issues #20 / #21 / #22 / #23 — Foundation, Settings, Import & Export,
- * Power features (command palette, keymaps, minimap, linters)
+ * Sub-issues #20–#24 — Foundation, Settings, Import & Export,
+ * Power features, Formatting & language tools
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import CodeMirror from "@uiw/react-codemirror";
@@ -14,6 +14,9 @@ import { FileMenu } from "~/lib/code-editor/file-menu";
 import type { FileMenuAction } from "~/lib/code-editor/file-menu";
 import { UrlModal } from "~/lib/code-editor/url-modal";
 import { CommandPalette } from "~/components/CommandPalette";
+import { MarkdownPreview } from "~/lib/code-editor/markdown-preview";
+import { formatDoc, canFormat } from "~/lib/code-editor/prettier";
+import { prettyJson, minifyJson } from "~/lib/code-editor/json-tools";
 import { useToast } from "~/components/Toast";
 import {
   openFile,
@@ -45,6 +48,7 @@ function CodeEditor() {
   const [drawerFocus, setDrawerFocus] = useState<string | undefined>();
   const [urlModalOpen, setUrlModalOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [fileState, setFileState] = useState<FileState>({
     name: null,
@@ -52,6 +56,7 @@ function CodeEditor() {
     dirty: false,
   });
   const editorContainerRef = useRef<HTMLDivElement>(null);
+  const ctrlKPendingRef = useRef(false);
   const { show: showToast, ToastContainer } = useToast();
 
   const { extensions, statusStore, activeLang, setLanguage, applySettings, onCreateEditor, viewRef } =
@@ -158,6 +163,13 @@ function CodeEditor() {
           break;
         }
         case "save": {
+          // Format on save when enabled
+          if (settings.format.onSave) {
+            const view = viewRef.current;
+            if (view) {
+              try { await formatDoc(view, activeLang.id, settings); } catch { /* ignore */ }
+            }
+          }
           const text = applyExportTransforms(value, settings, activeLang);
           if (fileState.handle) {
             await saveToHandle(text, fileState.handle);
@@ -195,6 +207,18 @@ function CodeEditor() {
     [value, settings, activeLang, fileState, openDocument, showToast],
   );
 
+  // ── Format handler ────────────────────────────────────────────────────────
+  const handleFormat = useCallback(async () => {
+    const view = viewRef.current;
+    if (!view) return;
+    try {
+      const formatted = await formatDoc(view, activeLang.id, settings);
+      if (!formatted) showToast(`No formatter for ${activeLang.label}`, "error");
+    } catch (e) {
+      showToast(`Format error: ${(e as Error).message}`, "error");
+    }
+  }, [viewRef, activeLang, settings, showToast]);
+
   // ── Keyboard shortcuts ────────────────────────────────────────────────────
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -204,10 +228,25 @@ function CodeEditor() {
       if (mod && e.key === "o") { e.preventDefault(); handleFileAction("open"); return; }
       if (mod && e.key === "s") { e.preventDefault(); handleFileAction("save"); return; }
       if (mod && e.shiftKey && e.key === "C") { e.preventDefault(); copyText(editorContainerRef.current as unknown as import("@codemirror/view").EditorView); return; }
+      // Shift-Alt-F → format document
+      if (e.shiftKey && e.altKey && e.key === "F") { e.preventDefault(); handleFormat(); return; }
+      // Ctrl-K V → toggle Markdown preview (Ctrl-K is a prefix chord)
+      if (mod && e.key === "k") {
+        e.preventDefault();
+        ctrlKPendingRef.current = true;
+        setTimeout(() => { ctrlKPendingRef.current = false; }, 1500);
+        return;
+      }
+      if (ctrlKPendingRef.current && e.key === "v") {
+        e.preventDefault();
+        ctrlKPendingRef.current = false;
+        if (activeLang.id === "markdown") setPreviewOpen((o) => !o);
+        return;
+      }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [handleFileAction]);
+  }, [handleFileAction, handleFormat, activeLang.id]);
 
   // ── Drag-and-drop ─────────────────────────────────────────────────────────
   const handleDragOver = (e: React.DragEvent) => {
@@ -274,6 +313,68 @@ function CodeEditor() {
           )}
         </div>
         <div className="flex items-center gap-1">
+          {/* JSON tools — shown only when active language is JSON */}
+          {activeLang.id === "json" && (
+            <>
+              <button
+                type="button"
+                title="Pretty-print JSON"
+                onClick={() => {
+                  const view = viewRef.current;
+                  if (view) {
+                    const err = prettyJson(view);
+                    if (err) showToast(`JSON error: ${err}`, "error");
+                  }
+                }}
+                className="rounded px-2 py-1 text-xs text-muted hover:bg-border hover:text-fg transition-colors"
+              >
+                Pretty
+              </button>
+              <button
+                type="button"
+                title="Minify JSON"
+                onClick={() => {
+                  const view = viewRef.current;
+                  if (view) {
+                    const err = minifyJson(view);
+                    if (err) showToast(`JSON error: ${err}`, "error");
+                  }
+                }}
+                className="rounded px-2 py-1 text-xs text-muted hover:bg-border hover:text-fg transition-colors"
+              >
+                Minify
+              </button>
+            </>
+          )}
+
+          {/* Format button — shown when Prettier supports active language */}
+          {canFormat(activeLang.id) && (
+            <button
+              type="button"
+              title="Format document (Shift-Alt-F)"
+              onClick={handleFormat}
+              className="rounded px-2 py-1 text-xs text-muted hover:bg-border hover:text-fg transition-colors"
+            >
+              Format
+            </button>
+          )}
+
+          {/* Markdown preview toggle */}
+          {activeLang.id === "markdown" && (
+            <button
+              type="button"
+              title="Toggle Markdown preview (Ctrl-K V)"
+              onClick={() => setPreviewOpen((o) => !o)}
+              className={`rounded px-2 py-1 text-xs transition-colors ${
+                previewOpen
+                  ? "bg-accent text-white"
+                  : "text-muted hover:bg-border hover:text-fg"
+              }`}
+            >
+              Preview
+            </button>
+          )}
+
           <FileMenu onAction={handleFileAction} />
           <button
             type="button"
@@ -290,10 +391,12 @@ function CodeEditor() {
         </div>
       </header>
 
+      {/* Editor + optional Markdown preview split-pane */}
+      <div className="min-h-0 flex-1 flex gap-2 overflow-hidden">
       {/* Editor with drag-and-drop */}
       <div
         ref={editorContainerRef}
-        className={`min-h-0 flex-1 overflow-hidden rounded-xl border transition-colors ${
+        className={`${previewOpen ? "w-1/2" : "flex-1"} overflow-hidden rounded-xl border transition-colors ${
           isDragging ? "border-accent bg-card/50" : "border-border"
         }`}
         onDragOver={handleDragOver}
@@ -332,6 +435,14 @@ function CodeEditor() {
           placeholder="Start typing…"
         />
       </div>
+
+      {/* Markdown preview pane */}
+      {previewOpen && activeLang.id === "markdown" && (
+        <div className="w-1/2 overflow-hidden rounded-xl border border-border bg-card">
+          <MarkdownPreview source={value} className="h-full" />
+        </div>
+      )}
+      </div>{/* end editor+preview flex wrapper */}
 
       {/* Status bar */}
       <StatusBar
