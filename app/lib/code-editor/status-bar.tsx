@@ -88,6 +88,10 @@ type StatusBarProps = {
   store: StatusStore;
   activeLang: Lang;
   onLanguageChange: (id: string) => void;
+  /** Live indent label from settings, e.g. "Spaces: 2" or "Tabs" */
+  indent?: string;
+  /** Live EOL label from settings, e.g. "LF" or "CRLF" */
+  eol?: string;
   onIndentClick?: () => void;
   onEolClick?: () => void;
   className?: string;
@@ -97,6 +101,8 @@ export function StatusBar({
   store,
   activeLang,
   onLanguageChange,
+  indent = "Spaces: 2",
+  eol = "LF",
   onIndentClick,
   onEolClick,
   className,
@@ -134,14 +140,14 @@ export function StatusBar({
       {/* Spacer */}
       <span className="flex-1" />
 
-      {/* Indent indicator (wired to settings in #21) */}
+      {/* Indent indicator */}
       <button
         className="whitespace-nowrap rounded px-1.5 py-0.5 hover:bg-border transition-colors"
         onClick={onIndentClick}
         title="Indent settings"
         type="button"
       >
-        Spaces: 2
+        {indent}
       </button>
 
       {/* EOL indicator */}
@@ -151,7 +157,7 @@ export function StatusBar({
         title="Line ending settings"
         type="button"
       >
-        LF
+        {eol}
       </button>
 
       {/* Encoding (read-only) */}

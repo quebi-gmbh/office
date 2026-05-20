@@ -1,8 +1,8 @@
 /**
  * Core editor hook.
  *
- * Returns the extension array to pass to <CodeMirror extensions={...}> and
- * imperative helpers that the route component and status bar can call.
+ * Returns the CM extension array (stable across renders — values are updated
+ * via compartment.reconfigure), imperative helpers, and status-bar state.
  */
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
@@ -11,48 +11,51 @@ import type { Extension } from "@codemirror/state";
 import { indentWithTab } from "@codemirror/commands";
 import { keymap } from "@codemirror/view";
 import type { EditorView } from "@codemirror/view";
-import { themeCompartment, getThemeExtension, useAutoTheme } from "./theme";
+import { useAutoTheme } from "./theme";
 import { noLanguage, langById } from "./languages";
 import type { Lang } from "./languages";
 import { createStatusPlugin } from "./status-bar";
+import {
+  createCompartments,
+  buildInitialExtensions,
+  applySettings as applySettingsImpl,
+} from "./compartments";
+import type { CodeSettings } from "./settings";
+import { defaults } from "./settings";
 
 export type UseEditorReturn = {
   extensions: Extension[];
   statusStore: ReturnType<typeof createStatusPlugin>[1];
   activeLang: Lang;
   setLanguage: (id: string) => Promise<void>;
+  applySettings: (settings: CodeSettings, prev?: CodeSettings) => void;
   /** Assign to onCreateEditor prop of <CodeMirror /> */
   onCreateEditor: (view: EditorView) => void;
   viewRef: RefObject<EditorView | null>;
 };
 
-export function useEditor(): UseEditorReturn {
+export function useEditor(initialSettings: CodeSettings = defaults): UseEditorReturn {
   const viewRef = useRef<EditorView | null>(null);
 
-  // Track active language in state so the status bar re-renders on change
+  // Language state
   const [activeLang, setActiveLang] = useState<Lang>(noLanguage);
 
-  // Stable Compartment instances
+  // Stable per-editor instances — created once
   const langCompartment = useMemo(() => new Compartment(), []);
-
-  // Status plugin — stable pair
+  const comps = useMemo(() => createCompartments(), []);
   const [statusPlugin, statusStore] = useMemo(() => createStatusPlugin(), []);
 
-  // Wire auto-theme observer (runs after mount when viewRef is populated)
-  useAutoTheme(viewRef, "auto");
-
-  const isDark =
-    typeof matchMedia !== "undefined" &&
-    matchMedia("(prefers-color-scheme: dark)").matches;
+  // Wire auto-theme observer
+  useAutoTheme(viewRef, initialSettings.theme.mode);
 
   const extensions = useMemo<Extension[]>(
     () => [
-      themeCompartment.of(getThemeExtension(isDark)),
+      ...buildInitialExtensions(comps, initialSettings),
       langCompartment.of([]),
       keymap.of([indentWithTab]),
       statusPlugin,
     ],
-    // These are intentionally stable — values are reconfigured imperatively
+    // Intentionally stable — values are reconfigured imperatively
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
@@ -74,11 +77,21 @@ export function useEditor(): UseEditorReturn {
     [langCompartment],
   );
 
+  const applySettings = useCallback(
+    (settings: CodeSettings, prev?: CodeSettings) => {
+      const view = viewRef.current;
+      if (!view) return;
+      applySettingsImpl(view, comps, settings, prev);
+    },
+    [comps],
+  );
+
   return {
     extensions,
     statusStore,
     activeLang,
     setLanguage,
+    applySettings,
     onCreateEditor,
     viewRef,
   };
