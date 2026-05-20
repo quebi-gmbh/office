@@ -15,6 +15,7 @@ More tools may follow.
 
 - [Bun](https://bun.sh) — runtime, package manager, and bundler (`bun build`)
 - [React 19](https://react.dev) + [React Router 7](https://reactrouter.com) (SPA mode)
+- [Tailwind CSS v4](https://tailwindcss.com) — utility-first styling, CSS-first config in `app/app.css`. See `CLAUDE.md` → "Styling" for conventions.
 - File-based routing via the flat-routes convention (subset, see below)
 - GitHub Pages for static hosting
 

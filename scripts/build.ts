@@ -3,8 +3,13 @@
  *   1. Regenerates app/routes.gen.ts
  *   2. Bundles the client with `Bun.build`
  *   3. Copies /public into /dist
- *   4. Injects the hashed entry script into index.html
- *   5. Writes 404.html (copy of index.html) so GitHub Pages can SPA-fallback
+ *   4. Compiles Tailwind CSS → dist/styles.css (minified)
+ *   5. Injects the hashed entry script into index.html
+ *   6. Writes 404.html (copy of index.html) so GitHub Pages can SPA-fallback
+ *
+ * `SKIP_CSS=1` is set by scripts/dev.ts, which owns Tailwind via --watch.
+ * In that mode we also avoid `rm -rf dist` so the running watcher's
+ * dist/styles.css survives across rebuilds — only dist/assets is cleaned.
  */
 import { rm, mkdir, cp, readFile, writeFile } from "node:fs/promises";
 import { join, dirname, relative } from "node:path";
@@ -15,9 +20,15 @@ const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(here, "..");
 const DIST = join(ROOT, "dist");
 const PUBLIC = join(ROOT, "public");
+const SKIP_CSS = !!process.env.SKIP_CSS;
 
-await rm(DIST, { recursive: true, force: true });
-await mkdir(DIST, { recursive: true });
+if (SKIP_CSS) {
+  await rm(join(DIST, "assets"), { recursive: true, force: true });
+  await mkdir(DIST, { recursive: true });
+} else {
+  await rm(DIST, { recursive: true, force: true });
+  await mkdir(DIST, { recursive: true });
+}
 
 await $`bun run ${join(here, "generate-routes.ts")}`;
 
@@ -48,6 +59,10 @@ if (!entry) throw new Error("bun build produced no entry-point output");
 const entryHref = "/" + relative(DIST, entry.path).replaceAll("\\", "/");
 
 await cp(PUBLIC, DIST, { recursive: true });
+
+if (!SKIP_CSS) {
+  await $`bunx --bun @tailwindcss/cli -i ${join(ROOT, "app/app.css")} -o ${join(DIST, "styles.css")} --minify`.quiet();
+}
 
 const indexPath = join(DIST, "index.html");
 const html = await readFile(indexPath, "utf8");
