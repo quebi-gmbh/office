@@ -291,7 +291,7 @@ function CodeEditor() {
   // ── Loading skeleton ───────────────────────────────────────────────────────
   if (!loaded) {
     return (
-      <section className="flex flex-col gap-2" style={{ height: "calc(100vh - 9rem)" }}>
+      <section className="flex flex-col flex-1 min-h-0 gap-2">
         <header className="flex flex-wrap items-center justify-between gap-2">
           <h1 className="m-0 text-xl font-semibold tracking-tight">Code editor</h1>
         </header>
@@ -301,7 +301,7 @@ function CodeEditor() {
   }
 
   return (
-    <section className="flex flex-col gap-2" style={{ height: "calc(100vh - 9rem)" }}>
+    <section className="flex flex-col flex-1 min-h-0 gap-2">
       {/* Toolbar */}
       <header className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">

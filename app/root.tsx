@@ -29,7 +29,7 @@ export default function Root() {
           </NavLink>
         </nav>
       </header>
-      <main className="mx-auto w-full max-w-[1100px] flex-1 px-6 py-8">
+      <main className="mx-auto w-full max-w-[1100px] flex-1 flex flex-col overflow-hidden px-6 py-8">
         <Suspense
           fallback={
             <div className="h-32 rounded-xl border border-border bg-card animate-pulse" />
