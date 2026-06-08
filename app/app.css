@@ -71,44 +71,109 @@ a:hover {
   #root main { padding: 0 !important; max-width: none !important; }
   .cm-editor { height: auto !important; overflow: visible !important; }
   .cm-scroller { overflow: visible !important; }
+  .ProseMirror { height: auto !important; overflow: visible !important; }
+}
+
+/* ---------------------------------------------------------------------------
+   TipTap / ProseMirror document editor styles.
+   These are content-level rules that can't be expressed as inline utilities
+   (descendant selectors, pseudo-elements). Everything uses --color-* vars
+   so dark mode flips automatically via the media query above.
+   --------------------------------------------------------------------------- */
+
+/* Editor surface */
+.ProseMirror {
+  min-height: 60vh;
+  outline: none;
+  color: var(--color-fg);
+  font-size: 1rem;
+  line-height: 1.7;
+}
+
+/* Paragraph & vertical rhythm */
+.ProseMirror p {
+  margin: 0 0 0.75em;
+}
+
+/* Headings */
+.ProseMirror h1,
+.ProseMirror h2,
+.ProseMirror h3,
+.ProseMirror h4,
+.ProseMirror h5,
+.ProseMirror h6 {
+  margin: 1.4em 0 0.4em;
+  line-height: 1.25;
+  font-weight: 700;
+  color: var(--color-fg);
+}
+.ProseMirror h1 { font-size: 2rem; }
+.ProseMirror h2 { font-size: 1.5rem; }
+.ProseMirror h3 { font-size: 1.25rem; }
+.ProseMirror h4 { font-size: 1.1rem; }
+.ProseMirror h5,
+.ProseMirror h6 { font-size: 1rem; }
+
+/* Lists */
+.ProseMirror ul,
+.ProseMirror ol {
+  margin: 0 0 0.75em;
+  padding-left: 1.6em;
+}
+.ProseMirror li + li { margin-top: 0.15em; }
+.ProseMirror li > p { margin: 0; }
+
+/* Blockquote */
+.ProseMirror blockquote {
+  margin: 0.75em 0;
+  padding: 0.4em 1em;
+  border-left: 3px solid var(--color-border);
+  color: var(--color-muted);
+}
+
+/* Horizontal rule */
+.ProseMirror hr {
+  border: none;
+  border-top: 1px solid var(--color-border);
+  margin: 1.5em 0;
+}
+
+/* Inline code */
+.ProseMirror code {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  background: var(--color-border);
+  color: var(--color-fg);
+  border-radius: 3px;
+  padding: 0.15em 0.35em;
+}
+
+/* Links */
+.ProseMirror a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.ProseMirror a:hover {
+  opacity: 0.8;
+}
+
+/* Placeholder (shown on empty first paragraph) */
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--color-muted);
+  opacity: 0.6;
+  pointer-events: none;
+  float: left;
+  height: 0;
 }
 
 /* ---------------------------------------------------------------------------
    Legacy BEM rules for views not yet migrated to Tailwind utilities.
    Carried over from the old public/styles.css minus the :root tokens
    (which now live in @theme above). Remove these rules as each view is
-   migrated. Currently covers: text editor, paint.
+   migrated. Currently covers: paint.
    --------------------------------------------------------------------------- */
-
-.text {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-.text__bar {
-  display: flex;
-  align-items: baseline;
-  gap: 1rem;
-}
-.text__bar h1 {
-  margin: 0;
-  font-size: 1.25rem;
-}
-.text__bar small {
-  color: var(--color-muted);
-}
-.text__area {
-  width: 100%;
-  min-height: 60vh;
-  padding: 1rem;
-  border: 1px solid var(--color-border);
-  border-radius: 10px;
-  background: var(--color-card);
-  color: var(--color-fg);
-  font-family: var(--font-mono);
-  font-size: 14px;
-  resize: vertical;
-}
 
 /* ─── Paint app ──────────────────────────────────────────────────────────── */
 
