@@ -8,8 +8,10 @@
  *     allowlist: Mod+Z, Mod+Shift+Z, Mod+Y, and Escape (which always fire).
  *
  * Key matching:
- *   - Letter shortcuts compare e.code (KeyB) for keyboard-layout independence.
- *   - Symbol shortcuts ([, ], ?, X) compare e.key.
+ *   - Letter shortcuts compare e.key (the character produced) for layout independence.
+ *     Using e.key means Ctrl+Z fires on the key labelled Z regardless of physical position,
+ *     so QWERTZ keyboards (where Y and Z are swapped vs QWERTY) work correctly.
+ *   - Symbol shortcuts ([, ], ?, Delete, …) also compare e.key.
  *   - 'Mod+' prefix checks the platform-appropriate modifier (Meta on mac, Ctrl elsewhere).
  */
 import { useEffect, useState } from "react";
@@ -40,16 +42,18 @@ function matchesKeys(e: KeyboardEvent, keys: string): boolean {
   // Don't fire if unexpected modifiers are pressed.
   if (!requireMod && e.getModifierState(modKey())) return false;
 
-  // Letter codes: single uppercase letter → e.code = 'KeyX'
-  // Reject if Shift is held unexpectedly (Shift+B ≠ B shortcut, but ? = Shift+/ on purpose).
+  // Letters: compare the character produced (e.key) case-insensitively.
+  // e.key is layout-aware: on QWERTZ the key labelled Z yields e.key="z",
+  // correctly matching "Z" shortcuts, unlike e.code which is position-based.
+  // Reject unexpected Shift so Shift+B doesn't trigger the B tool shortcut.
   if (/^[A-Z]$/.test(keyPart)) {
     if (!requireShift && e.shiftKey) return false;
-    return e.code === `Key${keyPart}`;
+    return e.key.toUpperCase() === keyPart;
   }
-  // Digits — same rationale: Shift+1 = "!" on US layout, not "1".
+  // Digits: e.key gives "0"–"9" with no modifier on all standard layouts.
   if (/^[0-9]$/.test(keyPart)) {
     if (!requireShift && e.shiftKey) return false;
-    return e.code === `Digit${keyPart}`;
+    return e.key === keyPart;
   }
   // Named keys
   if (keyPart === "Escape") return e.key === "Escape";
