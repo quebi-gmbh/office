@@ -24,6 +24,55 @@ export function DocEditor() {
         spellcheck: String(settings.behaviour.spellCheck),
         class: "doc-editor-body",
       },
+      // Handle image paste (clipboard) and drag-drop
+      handlePaste(view, event) {
+        const items = event.clipboardData?.items;
+        if (!items) return false;
+        let handled = false;
+        for (const item of Array.from(items)) {
+          if (item.type.startsWith("image/")) {
+            const file = item.getAsFile();
+            if (!file) continue;
+            const reader = new FileReader();
+            reader.onload = () => {
+              const src = reader.result as string;
+              view.dispatch(
+                view.state.tr.replaceSelectionWith(
+                  view.state.schema.nodes.image.create({ src, alt: "" }),
+                ),
+              );
+            };
+            reader.readAsDataURL(file);
+            handled = true;
+          }
+        }
+        return handled;
+      },
+      handleDrop(view, event, _slice, moved) {
+        if (moved) return false;
+        const files = event.dataTransfer?.files;
+        if (!files || files.length === 0) return false;
+        let handled = false;
+        for (const file of Array.from(files)) {
+          if (file.type.startsWith("image/")) {
+            const reader = new FileReader();
+            const pos = view.posAtCoords({
+              left: event.clientX,
+              top: event.clientY,
+            });
+            reader.onload = () => {
+              const src = reader.result as string;
+              const alt = file.name;
+              const node = view.state.schema.nodes.image.create({ src, alt });
+              const tr = view.state.tr.insert(pos?.pos ?? 0, node);
+              view.dispatch(tr);
+            };
+            reader.readAsDataURL(file);
+            handled = true;
+          }
+        }
+        return handled;
+      },
     },
     immediatelyRender: false,
   });

@@ -21,6 +21,11 @@ import { Superscript } from "@tiptap/extension-superscript";
 import { Subscript } from "@tiptap/extension-subscript";
 import { TaskList } from "@tiptap/extension-task-list";
 import { TaskItem } from "@tiptap/extension-task-item";
+import { Table } from "@tiptap/extension-table";
+import { TableRow } from "@tiptap/extension-table-row";
+import { TableCell } from "@tiptap/extension-table-cell";
+import { TableHeader } from "@tiptap/extension-table-header";
+import { Image } from "@tiptap/extension-image";
 
 export const extensions = [
   StarterKit.configure({
@@ -58,4 +63,13 @@ export const extensions = [
   // ── Task lists (interactive checkboxes) ───────────────────────────────────
   TaskList,
   TaskItem.configure({ nested: true }),
+
+  // ── Tables ────────────────────────────────────────────────────────────────
+  Table.configure({ resizable: true }),
+  TableRow,
+  TableHeader,
+  TableCell,
+
+  // ── Images (base64 inline, no backend) ────────────────────────────────────
+  Image.configure({ inline: false, allowBase64: true }),
 ];
