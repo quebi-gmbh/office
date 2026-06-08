@@ -10,6 +10,10 @@
  * IMPORTANT: Underline and Link are configured via StarterKit.configure so we
  * don't double-register them (the old Tier 1 @tiptap/extension-underline dep
  * is intentionally NOT imported here — use StarterKit's built-in copy).
+ *
+ * Smart typography is Bucket-B (requires editor recreation when toggled).
+ * The `buildExtensions` factory receives the smartTypography flag so the
+ * Typography extension is included/excluded accordingly.
  */
 import { StarterKit } from "@tiptap/starter-kit";
 import { Placeholder } from "@tiptap/extension-placeholder";
@@ -27,9 +31,18 @@ import { TableCell } from "@tiptap/extension-table-cell";
 import { TableHeader } from "@tiptap/extension-table-header";
 import { Image } from "@tiptap/extension-image";
 import { CodeBlockLowlight } from "@tiptap/extension-code-block-lowlight";
+import { Typography } from "@tiptap/extension-typography";
 import { lowlight } from "./lowlight";
+import { SlashMenu } from "./slash-menu";
 
-export const extensions = [
+/**
+ * Build the extension array for the given settings.
+ *
+ * @param smartTypography  Include @tiptap/extension-typography (Bucket-B:
+ *                         editor must be recreated when this changes).
+ */
+export function buildExtensions(smartTypography = false) {
+  return [
   StarterKit.configure({
     // Disable the full code-block (syntax-highlighted blocks are Tier 4).
     // Inline `code` mark is still active.
@@ -79,4 +92,19 @@ export const extensions = [
   // Lowlight replaces StarterKit's plain codeBlock (disabled above).
   // Lazy language packs are loaded on demand via loadLanguage() in lowlight.ts.
   CodeBlockLowlight.configure({ lowlight }),
+
+  // ── Smart typography (Bucket-B: conditionally included) ───────────────────
+  // When enabled: converts -- → em-dash, straight quotes → curly, etc.
+  // Toggling requires editor recreation — see DocEditor.tsx.
+  ...(smartTypography ? [Typography] : []),
+
+  // ── Slash menu (/‐triggered insert popover) ───────────────────────────────
+  SlashMenu,
 ];
+}
+
+/**
+ * Static extension list (smart typography off).
+ * For use when settings are not yet available (e.g. SSR / initial render).
+ */
+export const extensions = buildExtensions(false);

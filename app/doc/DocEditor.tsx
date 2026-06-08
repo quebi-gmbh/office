@@ -1,6 +1,21 @@
+/**
+ * DocEditor — root component for the document editor at /doc.
+ *
+ * Split into two layers:
+ *
+ *   DocEditor        — outer shell; reads settings, applies Bucket-A CSS vars,
+ *                      manages the settings drawer + keyboard shortcuts, syncs
+ *                      document.title. Passes a React `key` to DocEditorCore
+ *                      that changes when smartTypography is toggled, triggering
+ *                      a clean remount (lossless: content flushes to localStorage
+ *                      on unmount and reloads on the next mount).
+ *
+ *   DocEditorCore    — inner layer; creates and owns the TipTap editor for a
+ *                      fixed set of extensions + settings.
+ */
 import { useEffect, useRef, useState } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
-import { extensions } from "./extensions";
+import { buildExtensions } from "./extensions";
 import { loadDraft, saveDraft } from "./storage";
 import { useDocDraft } from "./useDocDraft";
 import { useDocsSettings } from "./settings-context";
@@ -9,22 +24,29 @@ import { DocSettingsDrawer } from "./settings-drawer";
 import { Toolbar } from "./Toolbar";
 import { StatusBar } from "./StatusBar";
 
-export function DocEditor() {
+// ── Inner editor (recreated when Bucket-B settings change) ────────────────────
+
+function DocEditorCore({
+  smartTypography,
+  onSettingsClick,
+}: {
+  smartTypography: boolean;
+  onSettingsClick: () => void;
+}) {
   const { settings } = useDocsSettings();
-  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const draftRef = useRef(loadDraft());
   const initialDraft = draftRef.current;
 
   const editor = useEditor({
-    extensions,
+    extensions: buildExtensions(smartTypography),
     content: initialDraft.doc,
     editorProps: {
       attributes: {
         spellcheck: String(settings.behaviour.spellCheck),
         class: "doc-editor-body",
       },
-      // Handle image paste (clipboard) and drag-drop
+      // Handle image paste (clipboard)
       handlePaste(view, event) {
         const items = event.clipboardData?.items;
         if (!items) return false;
@@ -48,6 +70,7 @@ export function DocEditor() {
         }
         return handled;
       },
+      // Handle image drag-drop
       handleDrop(view, event, _slice, moved) {
         if (moved) return false;
         const files = event.dataTransfer?.files;
@@ -97,7 +120,6 @@ export function DocEditor() {
     migrated.current = true;
     if (initialDraft.legacyHtml) {
       editor.commands.setContent(initialDraft.legacyHtml);
-      // Persist immediately so next load picks up JSON format
       saveDraft({ title: initialDraft.title, doc: editor.getJSON() });
     }
   }, [editor, initialDraft]);
@@ -111,29 +133,61 @@ export function DocEditor() {
     };
   }, [editor, scheduleAutosave]);
 
-  // ── Apply Bucket-A settings (CSS vars + theme) ────────────────────────────
-  const pageRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    applyDocSettings(pageRef.current, settings);
-  }, [settings]);
-
-  // Clean up forced theme on unmount (so other routes aren't affected)
-  useEffect(() => {
-    return () => {
-      cleanupDocSettings();
-    };
-  }, []);
-
-  // ── Sync document.title ───────────────────────────────────────────────────
+  // Sync document.title
   useEffect(() => {
     document.title = title ? `${title} — Office` : "Document — Office";
   }, [title]);
-
-  // Restore default title on unmount
   useEffect(() => {
     return () => {
       document.title = "Office";
+    };
+  }, []);
+
+  return (
+    <>
+      {/* Sticky toolbar */}
+      <div className="sticky top-0 z-10">
+        {editor && (
+          <Toolbar editor={editor} onSettingsClick={onSettingsClick} />
+        )}
+      </div>
+
+      {/* Title input */}
+      <input
+        type="text"
+        value={title}
+        onChange={(e) => {
+          setTitle(e.target.value);
+          scheduleAutosave();
+        }}
+        placeholder="Untitled document"
+        aria-label="Document title"
+        className="mb-4 w-full border-b border-transparent bg-transparent text-3xl font-bold tracking-tight text-fg placeholder:text-muted/50 focus:border-border focus:outline-none"
+      />
+
+      {/* Editor body */}
+      <EditorContent editor={editor} className="flex-1" />
+
+      {/* Status bar */}
+      {editor && <StatusBar editor={editor} />}
+    </>
+  );
+}
+
+// ── Outer shell (manages settings, drawer, CSS vars, shortcuts) ───────────────
+
+export function DocEditor() {
+  const { settings } = useDocsSettings();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // ── Apply Bucket-A settings (CSS vars + theme) ────────────────────────────
+  const pageRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    applyDocSettings(pageRef.current, settings);
+  }, [settings]);
+  useEffect(() => {
+    return () => {
+      cleanupDocSettings();
     };
   }, []);
 
@@ -150,43 +204,25 @@ export function DocEditor() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  // Bucket-B: smartTypography toggles trigger editor recreation.
+  // The `key` change unmounts DocEditorCore (flushing autosave in useDocDraft's
+  // cleanup effect) then remounts it, which re-reads the now-saved draft.
+  const smartTypoKey = settings.typography.smartTypography ? "smart" : "plain";
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* Sticky toolbar */}
-      <div className="sticky top-0 z-10">
-        {editor && (
-          <Toolbar
-            editor={editor}
-            onSettingsClick={() => setDrawerOpen(true)}
-          />
-        )}
-      </div>
-
-      {/* Centered page */}
+      {/* Centered page — CSS vars set on this element by applyDocSettings */}
       <div
         ref={pageRef}
-        className="mx-auto w-full flex-1 px-6 py-6"
+        className="mx-auto flex w-full flex-1 flex-col px-6 py-6"
         style={{ maxWidth: "var(--doc-max-width, 800px)" }}
       >
-        {/* Title */}
-        <input
-          type="text"
-          value={title}
-          onChange={(e) => {
-            setTitle(e.target.value);
-            scheduleAutosave();
-          }}
-          placeholder="Untitled document"
-          aria-label="Document title"
-          className="mb-4 w-full border-b border-transparent bg-transparent text-3xl font-bold tracking-tight text-fg placeholder:text-muted/50 focus:border-border focus:outline-none"
+        <DocEditorCore
+          key={smartTypoKey}
+          smartTypography={settings.typography.smartTypography}
+          onSettingsClick={() => setDrawerOpen(true)}
         />
-
-        {/* Editor body */}
-        <EditorContent editor={editor} />
       </div>
-
-      {/* Status bar */}
-      {editor && <StatusBar editor={editor} />}
 
       {/* Settings drawer */}
       <DocSettingsDrawer
