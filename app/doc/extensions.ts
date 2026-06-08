@@ -26,6 +26,8 @@ import { TableRow } from "@tiptap/extension-table-row";
 import { TableCell } from "@tiptap/extension-table-cell";
 import { TableHeader } from "@tiptap/extension-table-header";
 import { Image } from "@tiptap/extension-image";
+import { CodeBlockLowlight } from "@tiptap/extension-code-block-lowlight";
+import { lowlight } from "./lowlight";
 
 export const extensions = [
   StarterKit.configure({
@@ -72,4 +74,9 @@ export const extensions = [
 
   // ── Images (base64 inline, no backend) ────────────────────────────────────
   Image.configure({ inline: false, allowBase64: true }),
+
+  // ── Syntax-highlighted code blocks ────────────────────────────────────────
+  // Lowlight replaces StarterKit's plain codeBlock (disabled above).
+  // Lazy language packs are loaded on demand via loadLanguage() in lowlight.ts.
+  CodeBlockLowlight.configure({ lowlight }),
 ];
