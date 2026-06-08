@@ -381,25 +381,6 @@ export function DocSettingsDrawer({ open, onClose }: DocSettingsDrawerProps) {
         </SettingsRow>
       </SettingsSection>
 
-      {/* ── Theme ── */}
-      <SettingsSection title="Theme">
-        <SettingsRow label="Color mode" htmlFor="ds-themeMode">
-          <Select
-            id="ds-themeMode"
-            value={settings.theme.mode}
-            onChange={(v) =>
-              update({
-                theme: { mode: v as DocSettings["theme"]["mode"] },
-              })
-            }
-            options={[
-              { value: "auto",  label: "Auto (system)" },
-              { value: "light", label: "Light" },
-              { value: "dark",  label: "Dark" },
-            ]}
-          />
-        </SettingsRow>
-      </SettingsSection>
     </Drawer>
   );
 }

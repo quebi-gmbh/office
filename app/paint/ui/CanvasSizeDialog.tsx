@@ -101,7 +101,7 @@ export function CanvasSizeDialog({ mode, engine, state, onClose }: CanvasSizeDia
                 className="paint-modal__input"
               />
             </label>
-            <span style={{ color: "var(--muted)" }}>×</span>
+            <span style={{ color: "var(--color-muted)" }}>×</span>
             <label className="paint-modal__field">
               <span className="paint-modal__field-label">Height</span>
               <input
@@ -116,7 +116,7 @@ export function CanvasSizeDialog({ mode, engine, state, onClose }: CanvasSizeDia
           </div>
 
           {isLarge && (
-            <p style={{ color: "var(--muted)", fontSize: "0.8rem", margin: 0 }}>
+            <p style={{ color: "var(--color-muted)", fontSize: "0.8rem", margin: 0 }}>
               ⚠ Large canvases use significant memory. Undo history will be limited.
             </p>
           )}

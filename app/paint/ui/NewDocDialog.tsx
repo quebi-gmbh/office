@@ -55,7 +55,7 @@ export function NewDocDialog({ onConfirm, onClose }: NewDocDialogProps) {
           {/* Presets */}
           <div>
             <label className="paint-toolbar__label" style={{ marginBottom: "0.4rem" }}>
-              <span style={{ color: "var(--muted)", fontSize: "0.8rem" }}>Preset</span>
+              <span style={{ color: "var(--color-muted)", fontSize: "0.8rem" }}>Preset</span>
             </label>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "0.3rem" }}>
               {PRESETS.map((p) => (
@@ -85,7 +85,7 @@ export function NewDocDialog({ onConfirm, onClose }: NewDocDialogProps) {
                 className="paint-modal__input"
               />
             </label>
-            <span style={{ color: "var(--muted)" }}>×</span>
+            <span style={{ color: "var(--color-muted)" }}>×</span>
             <label className="paint-modal__field">
               <span className="paint-modal__field-label">Height</span>
               <input
@@ -100,7 +100,7 @@ export function NewDocDialog({ onConfirm, onClose }: NewDocDialogProps) {
           </div>
 
           {large && (
-            <p style={{ color: "var(--muted)", fontSize: "0.8rem", margin: 0 }}>
+            <p style={{ color: "var(--color-muted)", fontSize: "0.8rem", margin: 0 }}>
               ⚠ Large canvases use significant memory. Undo history will be limited.
             </p>
           )}
@@ -136,7 +136,7 @@ export function NewDocDialog({ onConfirm, onClose }: NewDocDialogProps) {
             <button
               type="button"
               className="paint-toolbar__btn"
-              style={{ borderColor: "var(--accent)", color: "var(--accent)" }}
+              style={{ borderColor: "var(--color-accent)", color: "var(--color-accent)" }}
               onClick={confirm}
             >
               Create

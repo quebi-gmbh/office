@@ -97,43 +97,25 @@ export const darkTheme = oneDark;
 export const themeCompartment = new Compartment();
 
 // ── Helper ───────────────────────────────────────────────────────────────────
-export function getThemeExtension(isDark: boolean) {
-  return isDark ? darkTheme : lightTheme;
+// The site is always dark; always use oneDark for consistent syntax contrast.
+export function getThemeExtension(_isDark: boolean) {
+  return darkTheme;
 }
 
 // ── Hook ─────────────────────────────────────────────────────────────────────
 /**
- * Subscribes to prefers-color-scheme and hot-swaps the theme compartment when
- * the OS setting changes. Only active when `mode === "auto"`.
+ * Applies the editor theme. The site is dark-only, so we always use the dark
+ * theme regardless of OS preference or the `mode` setting.
  */
 export function useAutoTheme(
   viewRef: RefObject<EditorView | null>,
   mode: "auto" | "light" | "dark" = "auto",
 ) {
   useEffect(() => {
-    if (mode !== "auto") {
-      // Apply explicit mode immediately
-      const view = viewRef.current;
-      if (!view) return;
-      view.dispatch({
-        effects: themeCompartment.reconfigure(
-          getThemeExtension(mode === "dark"),
-        ),
-      });
-      return;
-    }
-
-    const mq = matchMedia("(prefers-color-scheme: dark)");
-    const apply = () => {
-      const view = viewRef.current;
-      if (!view) return;
-      view.dispatch({
-        effects: themeCompartment.reconfigure(getThemeExtension(mq.matches)),
-      });
-    };
-
-    apply(); // sync immediately
-    mq.addEventListener("change", apply);
-    return () => mq.removeEventListener("change", apply);
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({
+      effects: themeCompartment.reconfigure(darkTheme),
+    });
   }, [viewRef, mode]);
 }
