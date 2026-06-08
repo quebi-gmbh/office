@@ -35,6 +35,28 @@
   }
 }
 
+/* Force theme overrides — set by DocSettings when theme.mode !== "auto".
+   :root[data-theme="light/dark"] has higher specificity (0,2,0) than the
+   bare :root inside the @media block (0,1,0), so these always win. */
+:root[data-theme="light"] {
+  --color-bg: #fafafa;
+  --color-fg: #18181b;
+  --color-muted: #71717a;
+  --color-border: #e4e4e7;
+  --color-accent: #1d4ed8;
+  --color-live: #16a34a;
+  --color-card: #ffffff;
+}
+:root[data-theme="dark"] {
+  --color-bg: #0a0a0a;
+  --color-fg: #f4f4f5;
+  --color-muted: #a1a1aa;
+  --color-border: #27272a;
+  --color-accent: #60a5fa;
+  --color-live: #4ade80;
+  --color-card: #18181b;
+}
+
 /* Base — structural, not utility-shaped, so kept as plain CSS. */
 html,
 body,
@@ -81,13 +103,16 @@ a:hover {
    so dark mode flips automatically via the media query above.
    --------------------------------------------------------------------------- */
 
-/* Editor surface */
+/* Editor surface.
+   --doc-font / --doc-font-size / --doc-line-height are set by applyDocSettings()
+   on the page wrapper element; they inherit down to .ProseMirror automatically. */
 .ProseMirror {
   min-height: 60vh;
   outline: none;
   color: var(--color-fg);
-  font-size: 1rem;
-  line-height: 1.7;
+  font-family: var(--doc-font, var(--font-sans));
+  font-size: var(--doc-font-size, 1rem);
+  line-height: var(--doc-line-height, 1.7);
 }
 
 /* Paragraph & vertical rhythm */
@@ -166,6 +191,298 @@ a:hover {
   pointer-events: none;
   float: left;
   height: 0;
+}
+
+/* Find & replace search match highlights */
+.doc-search-match {
+  background-color: color-mix(in srgb, var(--color-accent) 25%, transparent);
+  border-radius: 2px;
+}
+.doc-search-active {
+  background-color: color-mix(in srgb, var(--color-accent) 50%, transparent);
+  outline: 1px solid var(--color-accent);
+}
+
+/* Syntax-highlighted code blocks (Lowlight / highlight.js) */
+.ProseMirror pre {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 1em 1.2em;
+  margin: 0.75em 0;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  line-height: 1.6;
+}
+.ProseMirror pre code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+}
+/* highlight.js token colours — intentionally minimal, using semantic vars */
+.hljs-keyword,
+.hljs-operator,
+.hljs-selector-tag { color: var(--color-accent); }
+.hljs-string,
+.hljs-attr { color: #22c55e; }
+.hljs-number,
+.hljs-literal { color: #f97316; }
+.hljs-comment { color: var(--color-muted); font-style: italic; }
+.hljs-function,
+.hljs-title.function_ { color: #a78bfa; }
+.hljs-built_in,
+.hljs-type { color: #06b6d4; }
+.hljs-variable,
+.hljs-params { color: var(--color-fg); }
+.hljs-class .hljs-title,
+.hljs-title.class_ { color: #f43f5e; }
+.hljs-property { color: var(--color-accent); }
+.hljs-tag { color: #f43f5e; }
+.hljs-name { color: var(--color-accent); }
+.hljs-punctuation { color: var(--color-muted); }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: bold; }
+
+/* Tables */
+.ProseMirror table {
+  border-collapse: collapse;
+  margin: 1em 0;
+  width: 100%;
+  overflow-x: auto;
+  display: block;
+}
+.ProseMirror table td,
+.ProseMirror table th {
+  border: 1px solid var(--color-border);
+  padding: 0.4em 0.7em;
+  vertical-align: top;
+  min-width: 60px;
+  position: relative;
+}
+.ProseMirror table th {
+  background: var(--color-card);
+  font-weight: 600;
+}
+.ProseMirror table .selectedCell::after {
+  background: color-mix(in srgb, var(--color-accent) 20%, transparent);
+  content: "";
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 2;
+}
+/* Column resize handle */
+.ProseMirror .column-resize-handle {
+  background-color: var(--color-accent);
+  bottom: -2px;
+  pointer-events: none;
+  position: absolute;
+  right: -2px;
+  top: 0;
+  width: 4px;
+}
+.ProseMirror.resize-cursor {
+  cursor: col-resize;
+}
+
+/* Images */
+.ProseMirror img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+  display: block;
+  margin: 0.5em 0;
+}
+.ProseMirror img.ProseMirror-selectednode {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* Task lists */
+.ProseMirror ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0;
+}
+.ProseMirror ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5em;
+}
+.ProseMirror ul[data-type="taskList"] li > label {
+  flex-shrink: 0;
+  margin-top: 0.2em;
+}
+.ProseMirror ul[data-type="taskList"] li > div {
+  flex: 1;
+}
+.ProseMirror ul[data-type="taskList"] input[type="checkbox"] {
+  cursor: pointer;
+  accent-color: var(--color-accent);
+}
+
+/* ---------------------------------------------------------------------------
+   Tier 3 — Doc editor extensions
+   --------------------------------------------------------------------------- */
+
+/* ── Paragraph spacing / first-line indent / list style ── */
+
+.ProseMirror p {
+  margin-bottom: var(--doc-paragraph-spacing, 0.75em);
+}
+
+.ProseMirror p + p {
+  text-indent: var(--doc-first-line-indent, 0);
+}
+
+.ProseMirror ol {
+  list-style-type: var(--doc-list-style, decimal);
+}
+
+/* ── Focus mode ──
+   `body[data-focus-mode]` is set by DocEditor when focus mode is active.
+   Hides everything except the editor page column. */
+
+body[data-focus-mode] header,
+body[data-focus-mode] footer,
+body[data-focus-mode] nav {
+  display: none !important;
+}
+
+/* ── Typewriter mode ──
+   Large scroll margins keep the cursor line vertically centred when
+   useTypewriter calls scrollIntoView({ block: "center" }). */
+
+.ProseMirror p,
+.ProseMirror h1,
+.ProseMirror h2,
+.ProseMirror h3,
+.ProseMirror h4,
+.ProseMirror h5,
+.ProseMirror h6,
+.ProseMirror li,
+.ProseMirror blockquote,
+.ProseMirror pre {
+  scroll-margin-top: 40vh;
+  scroll-margin-bottom: 40vh;
+}
+
+/* ── Page breaks ── */
+
+.doc-page-break {
+  border: none;
+  border-top: 2px dashed var(--color-border);
+  margin: 1.5em 0;
+  position: relative;
+}
+
+.doc-page-break::after {
+  content: "page break";
+  position: absolute;
+  top: -0.65em;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--color-bg);
+  padding: 0 0.5em;
+  font-size: 0.7em;
+  color: var(--color-muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+@media print {
+  .doc-page-break {
+    display: block;
+    border: none;
+    break-after: page;
+    page-break-after: always;
+    height: 0;
+    margin: 0;
+  }
+  .doc-page-break::after {
+    display: none;
+  }
+}
+
+/* ── Footnotes ── */
+
+/* Inline superscript reference */
+sup[data-footnote-ref] {
+  color: var(--color-accent);
+  font-size: 0.7em;
+  cursor: default;
+  user-select: none;
+}
+
+/* Body paragraph at the end of the document */
+p[data-footnote-body] {
+  font-size: 0.85em;
+  color: var(--color-muted);
+  border-top: 1px solid var(--color-border);
+  padding-top: 0.5em;
+  margin-top: 1em;
+}
+
+p[data-footnote-body]::before {
+  color: var(--color-accent);
+  font-weight: 600;
+  margin-right: 0.35em;
+}
+
+/* ── YouTube / Vimeo embeds ── */
+
+.doc-youtube-wrapper {
+  position: relative;
+  width: 100%;
+  padding-bottom: 56.25%; /* 16:9 */
+  margin: 1em 0;
+  background: var(--color-card);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.doc-youtube-wrapper iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+  border-radius: 6px;
+}
+
+@media print {
+  .doc-youtube-wrapper {
+    padding-bottom: 0;
+    height: auto;
+  }
+  .doc-youtube-wrapper iframe {
+    display: none;
+  }
+  /* Show the URL as text for print */
+  .doc-youtube-wrapper::after {
+    content: "[Video: " attr(data-src) "]";
+    display: block;
+    padding: 0.5em;
+    font-size: 0.85em;
+    color: var(--color-muted);
+  }
+}
+
+/* ── Print / PDF page rules ── */
+
+@media print {
+  @page {
+    margin: 20mm;
+  }
+
+  @page :first {
+    margin-top: 25mm;
+  }
 }
 
 /* ---------------------------------------------------------------------------
