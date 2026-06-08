@@ -13,6 +13,9 @@ import Suggestion from "@tiptap/suggestion";
 import { ReactRenderer } from "@tiptap/react";
 import type { Editor } from "@tiptap/react";
 import type { SuggestionOptions } from "@tiptap/suggestion";
+import { PluginKey } from "@tiptap/pm/state";
+
+const slashMenuPluginKey = new PluginKey("slashMenu");
 import type { SlashMenuHandle, SlashMenuItem } from "./slash-menu-list";
 import { SlashMenuList } from "./slash-menu-list";
 
@@ -217,6 +220,7 @@ export const SlashMenu = Extension.create({
     return [
       Suggestion({
         editor: this.editor,
+        pluginKey: slashMenuPluginKey,
         ...buildSuggestionConfig(this.editor),
       }),
     ];
