@@ -22,6 +22,8 @@ import {
   Undo,
 } from "lucide-react";
 import { SwatchPicker } from "./toolbar/SwatchPicker";
+import { TableControls } from "./toolbar/TableControls";
+import { ImageButton } from "./toolbar/ImageButton";
 
 interface Props {
   editor: Editor;
@@ -324,6 +326,14 @@ export function Toolbar({ editor, onSettingsClick }: Props) {
       >
         <Link size={13} />
       </ToolBtn>
+
+      <Divider />
+
+      {/* Table */}
+      <TableControls editor={editor} />
+
+      {/* Image */}
+      <ImageButton editor={editor} />
 
       <Divider />
 
