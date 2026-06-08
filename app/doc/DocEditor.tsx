@@ -23,8 +23,11 @@ import { applyDocSettings, cleanupDocSettings } from "./apply-settings";
 import { DocSettingsDrawer } from "./settings-drawer";
 import { FindReplace as FindReplaceModal } from "./find-replace/FindReplace";
 import { Outline } from "./outline/Outline";
+import { FileMenu } from "./FileMenu";
 import { Toolbar } from "./Toolbar";
 import { StatusBar } from "./StatusBar";
+import { decodeShareHash } from "./io";
+import type { JSONContent } from "@tiptap/react";
 
 // ── Inner editor (recreated when Bucket-B settings change) ────────────────────
 
@@ -106,10 +109,8 @@ function DocEditorCore({
     immediatelyRender: false,
   });
 
-  const { title, setTitle, scheduleAutosave } = useDocDraft(
-    editor ?? null,
-    settings.behaviour.autosaveMs,
-  );
+  const { title, setTitle, dirty, lastSavedAt, scheduleAutosave, flush } =
+    useDocDraft(editor ?? null, settings.behaviour.autosaveMs);
 
   // Initialise title from the loaded draft (once)
   const titleInitialized = useRef(false);
@@ -118,6 +119,32 @@ function DocEditorCore({
     titleInitialized.current = true;
     setTitle(initialDraft.title);
   }, [initialDraft.title, setTitle]);
+
+  // Decode #doc= share hash on first mount
+  const hashDecoded = useRef(false);
+  useEffect(() => {
+    if (hashDecoded.current || !editor) return;
+    hashDecoded.current = true;
+    const hash = location.hash;
+    if (!hash.includes("doc=")) return;
+    void (async () => {
+      const result = await decodeShareHash(hash);
+      if (!result) return;
+      const docIsEmpty =
+        !initialDraft.title &&
+        editor.state.doc.textContent.trim() === "";
+      if (
+        docIsEmpty ||
+        confirm("Load shared document? Your current document will be replaced.")
+      ) {
+        editor.commands.setContent(result.doc as JSONContent);
+        setTitle(result.title ?? "");
+        // Clear hash from URL
+        history.replaceState(null, "", location.pathname + location.search);
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor]);
 
   // Handle legacy plain-text migration
   const migrated = useRef(false);
@@ -149,10 +176,36 @@ function DocEditorCore({
     };
   }, []);
 
+  // Ctrl-S to force save
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && e.key === "s") {
+        e.preventDefault();
+        flush();
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [flush]);
+
   return (
     <>
-      {/* Sticky toolbar */}
-      <div className="sticky top-0 z-10">
+      {/* Sticky toolbar + file menu */}
+      <div className="sticky top-0 z-10 flex flex-col">
+        {/* File menu bar */}
+        <div className="flex items-center gap-1 border-b border-border bg-bg px-3 py-1">
+          {editor && (
+            <FileMenu
+              editor={editor}
+              title={title}
+              settings={settings}
+              dirty={dirty}
+              onImported={scheduleAutosave}
+            />
+          )}
+        </div>
+        {/* Formatting toolbar */}
         {editor && (
           <Toolbar editor={editor} onSettingsClick={onSettingsClick} />
         )}
@@ -193,7 +246,13 @@ function DocEditorCore({
       </div>
 
       {/* Status bar */}
-      {editor && <StatusBar editor={editor} />}
+      {editor && (
+        <StatusBar
+          editor={editor}
+          dirty={dirty}
+          lastSavedAt={lastSavedAt}
+        />
+      )}
     </>
   );
 }
