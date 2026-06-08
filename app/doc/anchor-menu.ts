@@ -27,6 +27,12 @@ function slugify(text: string): string {
     .trim();
 }
 
+// ── Plugin keys ──────────────────────────────────────────────────────────────
+// Each suggestion extension must have a unique PluginKey — sharing the default
+// "suggestion" key causes a ProseMirror crash when both are active together.
+
+const anchorMenuPluginKey = new PluginKey("anchorMenu");
+
 // ── Plugin to stamp id attrs on heading DOM nodes ─────────────────────────────
 
 const headingIdKey = new PluginKey("headingIds");
@@ -162,6 +168,7 @@ export const AnchorMenu = Extension.create({
     return [
       Suggestion({
         editor: this.editor,
+        pluginKey: anchorMenuPluginKey,
         ...buildAnchorSuggestion(this.editor),
       }),
       HeadingIdPlugin,
