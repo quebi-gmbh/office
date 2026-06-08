@@ -1,19 +1,27 @@
 import type { Editor } from "@tiptap/react";
 import {
+  AlignCenter,
+  AlignJustify,
+  AlignLeft,
+  AlignRight,
   Bold,
   Code,
   Italic,
   Link,
   List,
   ListOrdered,
+  ListTodo,
   Quote,
   Redo,
   RemoveFormatting,
   Settings,
   Strikethrough,
+  Subscript,
+  Superscript,
   Underline,
   Undo,
 } from "lucide-react";
+import { SwatchPicker } from "./toolbar/SwatchPicker";
 
 interface Props {
   editor: Editor;
@@ -27,7 +35,7 @@ const BTN =
 /** Additional classes when a mark/node is active. */
 const ACTIVE = "border-accent text-accent bg-card";
 
-function ToolBtn({
+export function ToolBtn({
   onClick,
   active = false,
   disabled = false,
@@ -59,7 +67,7 @@ function ToolBtn({
   );
 }
 
-function Divider() {
+export function Divider() {
   return <span className="mx-0.5 h-5 w-px self-center bg-border" aria-hidden />;
 }
 
@@ -102,13 +110,18 @@ export function Toolbar({ editor, onSettingsClick }: Props) {
     }
   }
 
+  // Active text color / highlight color for the swatch pickers
+  const activeTextColor =
+    (editor.getAttributes("textStyle").color as string | undefined) ?? null;
+  const activeHighlightColor =
+    (editor.getAttributes("highlight").color as string | undefined) ?? null;
+
   return (
     <div
       role="toolbar"
       aria-label="Formatting toolbar"
       className="flex flex-wrap items-center gap-1 border-b border-border bg-bg px-3 py-1.5"
     >
-      {/* Settings button — pushed to the right via ml-auto on the spacer */}
       {/* Undo / Redo */}
       <ToolBtn
         onClick={() => editor.chain().focus().undo().run()}
@@ -127,7 +140,7 @@ export function Toolbar({ editor, onSettingsClick }: Props) {
 
       <Divider />
 
-      {/* Headings dropdown */}
+      {/* Block type */}
       <select
         value={headingValue}
         onChange={handleHeadingChange}
@@ -177,6 +190,20 @@ export function Toolbar({ editor, onSettingsClick }: Props) {
         <Strikethrough size={13} />
       </ToolBtn>
       <ToolBtn
+        onClick={() => editor.chain().focus().toggleSuperscript().run()}
+        active={editor.isActive("superscript")}
+        title="Superscript"
+      >
+        <Superscript size={13} />
+      </ToolBtn>
+      <ToolBtn
+        onClick={() => editor.chain().focus().toggleSubscript().run()}
+        active={editor.isActive("subscript")}
+        title="Subscript"
+      >
+        <Subscript size={13} />
+      </ToolBtn>
+      <ToolBtn
         onClick={() => editor.chain().focus().toggleCode().run()}
         active={editor.isActive("code")}
         title="Inline code"
@@ -186,7 +213,78 @@ export function Toolbar({ editor, onSettingsClick }: Props) {
 
       <Divider />
 
-      {/* Structural */}
+      {/* Text color */}
+      <SwatchPicker
+        label={
+          <span
+            className="text-xs font-bold"
+            style={{ color: activeTextColor ?? "currentColor" }}
+          >
+            A
+          </span>
+        }
+        title="Text color"
+        activeColor={activeTextColor}
+        onPick={(color) => editor.chain().focus().setColor(color).run()}
+        onClear={() => editor.chain().focus().unsetColor().run()}
+      />
+
+      {/* Highlight */}
+      <SwatchPicker
+        label={
+          <span
+            className="text-xs font-bold"
+            style={{
+              backgroundColor: activeHighlightColor ?? "transparent",
+              padding: "0 2px",
+            }}
+          >
+            H
+          </span>
+        }
+        title="Highlight color"
+        activeColor={activeHighlightColor}
+        onPick={(color) =>
+          editor.chain().focus().toggleHighlight({ color }).run()
+        }
+        onClear={() => editor.chain().focus().unsetHighlight().run()}
+      />
+
+      <Divider />
+
+      {/* Text alignment */}
+      <ToolBtn
+        onClick={() => editor.chain().focus().setTextAlign("left").run()}
+        active={editor.isActive({ textAlign: "left" })}
+        title="Align left"
+      >
+        <AlignLeft size={13} />
+      </ToolBtn>
+      <ToolBtn
+        onClick={() => editor.chain().focus().setTextAlign("center").run()}
+        active={editor.isActive({ textAlign: "center" })}
+        title="Align center"
+      >
+        <AlignCenter size={13} />
+      </ToolBtn>
+      <ToolBtn
+        onClick={() => editor.chain().focus().setTextAlign("right").run()}
+        active={editor.isActive({ textAlign: "right" })}
+        title="Align right"
+      >
+        <AlignRight size={13} />
+      </ToolBtn>
+      <ToolBtn
+        onClick={() => editor.chain().focus().setTextAlign("justify").run()}
+        active={editor.isActive({ textAlign: "justify" })}
+        title="Justify"
+      >
+        <AlignJustify size={13} />
+      </ToolBtn>
+
+      <Divider />
+
+      {/* Lists */}
       <ToolBtn
         onClick={() => editor.chain().focus().toggleBulletList().run()}
         active={editor.isActive("bulletList")}
@@ -200,6 +298,13 @@ export function Toolbar({ editor, onSettingsClick }: Props) {
         title="Numbered list"
       >
         <ListOrdered size={13} />
+      </ToolBtn>
+      <ToolBtn
+        onClick={() => editor.chain().focus().toggleTaskList().run()}
+        active={editor.isActive("taskList")}
+        title="Task list"
+      >
+        <ListTodo size={13} />
       </ToolBtn>
       <ToolBtn
         onClick={() => editor.chain().focus().toggleBlockquote().run()}
@@ -232,15 +337,12 @@ export function Toolbar({ editor, onSettingsClick }: Props) {
         <RemoveFormatting size={13} />
       </ToolBtn>
 
-      {/* Spacer + Settings */}
+      {/* Spacer + Settings — pushed to right */}
       {onSettingsClick && (
         <>
           <span className="ml-auto" aria-hidden />
           <Divider />
-          <ToolBtn
-            onClick={onSettingsClick}
-            title="Settings (Ctrl+,)"
-          >
+          <ToolBtn onClick={onSettingsClick} title="Settings (Ctrl+,)">
             <Settings size={13} />
           </ToolBtn>
         </>
