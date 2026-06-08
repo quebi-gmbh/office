@@ -193,6 +193,16 @@ a:hover {
   height: 0;
 }
 
+/* Find & replace search match highlights */
+.doc-search-match {
+  background-color: color-mix(in srgb, var(--color-accent) 25%, transparent);
+  border-radius: 2px;
+}
+.doc-search-active {
+  background-color: color-mix(in srgb, var(--color-accent) 50%, transparent);
+  outline: 1px solid var(--color-accent);
+}
+
 /* Syntax-highlighted code blocks (Lowlight / highlight.js) */
 .ProseMirror pre {
   background: var(--color-card);
