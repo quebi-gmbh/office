@@ -220,8 +220,10 @@ export const SHORTCUTS: Shortcut[] = [
     keys: "Mod+V",
     label: "Paste image from clipboard",
     group: "file",
-    // Handled natively by the paste event listener in PaintApp — listed here for discoverability.
-    run(_engine, ev) { ev.preventDefault(); },
+    // Handled natively by the window "paste" event listener in PaintApp.
+    // Do NOT call ev.preventDefault() — it would suppress the browser's paste
+    // event that PaintApp's listener depends on, making Ctrl+V a no-op.
+    run() {},
   },
   {
     id: "export-dialog",
