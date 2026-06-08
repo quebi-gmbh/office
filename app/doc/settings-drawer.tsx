@@ -11,7 +11,7 @@ import { SettingsRow, SettingsSection } from "~/components/SettingsRow";
 import { useDocsSettings } from "./settings-context";
 import type { DocSettings } from "./settings";
 
-// ── Small control helpers (copied from code-editor/settings-drawer.tsx) ───────
+// ── Small control helpers ─────────────────────────────────────────────────────
 
 const Toggle = ({
   id,
@@ -132,10 +132,10 @@ export function DocSettingsDrawer({ open, onClose }: DocSettingsDrawerProps) {
               update({ page: { width: v as DocSettings["page"]["width"] } })
             }
             options={[
-              { value: "narrow", label: "Narrow (640 px)" },
+              { value: "narrow",      label: "Narrow (640 px)" },
               { value: "comfortable", label: "Comfortable (800 px)" },
-              { value: "wide", label: "Wide (1000 px)" },
-              { value: "full", label: "Full width" },
+              { value: "wide",        label: "Wide (1000 px)" },
+              { value: "full",        label: "Full width" },
             ]}
           />
         </SettingsRow>
@@ -155,9 +155,9 @@ export function DocSettingsDrawer({ open, onClose }: DocSettingsDrawerProps) {
               })
             }
             options={[
-              { value: "sans", label: "Sans-serif (system)" },
+              { value: "sans",  label: "Sans-serif (system)" },
               { value: "serif", label: "Serif (Georgia)" },
-              { value: "mono", label: "Monospace" },
+              { value: "mono",  label: "Monospace" },
             ]}
           />
         </SettingsRow>
@@ -187,6 +187,55 @@ export function DocSettingsDrawer({ open, onClose }: DocSettingsDrawerProps) {
           />
         </SettingsRow>
 
+        <SettingsRow label="Paragraph spacing (em)" htmlFor="ds-paraSpacing">
+          <NumberInput
+            id="ds-paraSpacing"
+            value={settings.typography.paragraphSpacing}
+            min={0}
+            max={3}
+            step={0.25}
+            onChange={(v) =>
+              update({ typography: { paragraphSpacing: v } })
+            }
+          />
+        </SettingsRow>
+
+        <SettingsRow
+          label="First-line indent (em)"
+          description="Indent the first line of each paragraph (0 = off)."
+          htmlFor="ds-indent"
+        >
+          <NumberInput
+            id="ds-indent"
+            value={settings.typography.firstLineIndent}
+            min={0}
+            max={4}
+            step={0.5}
+            onChange={(v) =>
+              update({ typography: { firstLineIndent: v } })
+            }
+          />
+        </SettingsRow>
+
+        <SettingsRow label="List numbering style" htmlFor="ds-listStyle">
+          <Select
+            id="ds-listStyle"
+            value={settings.typography.listStyle}
+            onChange={(v) =>
+              update({
+                typography: { listStyle: v as DocSettings["typography"]["listStyle"] },
+              })
+            }
+            options={[
+              { value: "decimal",     label: "1, 2, 3 (decimal)" },
+              { value: "lower-alpha", label: "a, b, c (lower alpha)" },
+              { value: "lower-roman", label: "i, ii, iii (lower roman)" },
+              { value: "upper-alpha", label: "A, B, C (upper alpha)" },
+              { value: "upper-roman", label: "I, II, III (upper roman)" },
+            ]}
+          />
+        </SettingsRow>
+
         <SettingsRow
           label="Smart typography"
           description="Convert -- to em-dash, straight quotes to curly, etc. Requires a brief editor reload."
@@ -200,10 +249,67 @@ export function DocSettingsDrawer({ open, onClose }: DocSettingsDrawerProps) {
             }
           />
         </SettingsRow>
+
+        <SettingsRow
+          label="Custom CSS"
+          description="CSS injected scoped to .ProseMirror. Use with caution."
+          htmlFor="ds-customCss"
+        >
+          <textarea
+            id="ds-customCss"
+            value={settings.typography.customCss}
+            rows={4}
+            spellCheck={false}
+            placeholder={"/* e.g. */\np { text-align: justify; }"}
+            onChange={(e) =>
+              update({ typography: { customCss: e.target.value } })
+            }
+            className="w-full rounded border border-border bg-bg px-2 py-1 font-mono text-xs focus:border-accent focus:outline-none"
+          />
+        </SettingsRow>
       </SettingsSection>
 
       {/* ── Behaviour ── */}
       <SettingsSection title="Behaviour">
+        <SettingsRow
+          label="Focus mode"
+          description="Hide toolbar and sidebars. Press F11 to toggle."
+          htmlFor="ds-focusMode"
+        >
+          <Toggle
+            id="ds-focusMode"
+            checked={settings.behaviour.focusMode}
+            onChange={(v) => update({ behaviour: { focusMode: v } })}
+          />
+        </SettingsRow>
+
+        <SettingsRow
+          label="Typewriter mode"
+          description="Keep the active line centred while typing."
+          htmlFor="ds-typewriter"
+        >
+          <Toggle
+            id="ds-typewriter"
+            checked={settings.behaviour.typewriterMode}
+            onChange={(v) => update({ behaviour: { typewriterMode: v } })}
+          />
+        </SettingsRow>
+
+        <SettingsRow
+          label="Target word count"
+          description="Show a progress bar in the status bar (0 = off)."
+          htmlFor="ds-targetWords"
+        >
+          <NumberInput
+            id="ds-targetWords"
+            value={settings.behaviour.targetWords}
+            min={0}
+            max={100000}
+            step={100}
+            onChange={(v) => update({ behaviour: { targetWords: v } })}
+          />
+        </SettingsRow>
+
         <SettingsRow label="Spell check" htmlFor="ds-spellCheck">
           <Toggle
             id="ds-spellCheck"
@@ -224,9 +330,29 @@ export function DocSettingsDrawer({ open, onClose }: DocSettingsDrawerProps) {
               })
             }
             options={[
-              { value: "500", label: "500 ms" },
+              { value: "500",  label: "500 ms" },
               { value: "1000", label: "1 s" },
               { value: "5000", label: "5 s" },
+            ]}
+          />
+        </SettingsRow>
+
+        <SettingsRow
+          label="Auto-snapshot interval"
+          description="Periodically save a version snapshot (0 = off)."
+          htmlFor="ds-versionInterval"
+        >
+          <Select
+            id="ds-versionInterval"
+            value={String(settings.behaviour.versionIntervalMin)}
+            onChange={(v) =>
+              update({ behaviour: { versionIntervalMin: Number(v) } })
+            }
+            options={[
+              { value: "0",  label: "Off" },
+              { value: "5",  label: "Every 5 min" },
+              { value: "10", label: "Every 10 min" },
+              { value: "30", label: "Every 30 min" },
             ]}
           />
         </SettingsRow>
@@ -247,9 +373,9 @@ export function DocSettingsDrawer({ open, onClose }: DocSettingsDrawerProps) {
               })
             }
             options={[
-              { value: "auto", label: "Auto" },
+              { value: "auto",   label: "Auto" },
               { value: "always", label: "Always" },
-              { value: "off", label: "Off" },
+              { value: "off",    label: "Off" },
             ]}
           />
         </SettingsRow>
@@ -267,9 +393,9 @@ export function DocSettingsDrawer({ open, onClose }: DocSettingsDrawerProps) {
               })
             }
             options={[
-              { value: "auto", label: "Auto (system)" },
+              { value: "auto",  label: "Auto (system)" },
               { value: "light", label: "Light" },
-              { value: "dark", label: "Dark" },
+              { value: "dark",  label: "Dark" },
             ]}
           />
         </SettingsRow>

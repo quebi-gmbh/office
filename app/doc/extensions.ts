@@ -1,19 +1,12 @@
 /**
  * TipTap extension list for the document editor.
  *
- * StarterKit v3 already bundles: Bold, Italic, **Underline**, Strike, Code,
- * CodeBlock, Heading (H1–H6), Paragraph, BulletList, OrderedList, ListItem,
- * Blockquote, HardBreak, HorizontalRule, **Link** (autolink), UndoRedo,
- * Dropcursor, Gapcursor, CharacterCount, TextStyle, Focus, Selection,
- * Collaboration (optional).
- *
- * IMPORTANT: Underline and Link are configured via StarterKit.configure so we
- * don't double-register them (the old Tier 1 @tiptap/extension-underline dep
- * is intentionally NOT imported here — use StarterKit's built-in copy).
+ * StarterKit v3 bundles: Bold, Italic, Underline, Strike, Code,
+ * Heading (H1–H6), Paragraph, BulletList, OrderedList, ListItem,
+ * Blockquote, HardBreak, HorizontalRule, Link (autolink), UndoRedo,
+ * Dropcursor, Gapcursor, CharacterCount, TextStyle, Focus, Selection.
  *
  * Smart typography is Bucket-B (requires editor recreation when toggled).
- * The `buildExtensions` factory receives the smartTypography flag so the
- * Typography extension is included/excluded accordingly.
  */
 import { StarterKit } from "@tiptap/starter-kit";
 import { Placeholder } from "@tiptap/extension-placeholder";
@@ -35,80 +28,72 @@ import { Typography } from "@tiptap/extension-typography";
 import { lowlight } from "./lowlight";
 import { SlashMenu } from "./slash-menu";
 import { FindReplace } from "./find-replace/plugin";
+import { FootnoteRef, FootnoteBody, FootnoteCommands } from "./extensions/footnote";
+import { PageBreak } from "./extensions/page-break";
+import { YouTubeEmbed } from "./extensions/youtube-embed";
+import { AnchorMenu } from "./anchor-menu";
 
-/**
- * Build the extension array for the given settings.
- *
- * @param smartTypography  Include @tiptap/extension-typography (Bucket-B:
- *                         editor must be recreated when this changes).
- */
 export function buildExtensions(smartTypography = false) {
   return [
-  StarterKit.configure({
-    // Disable the full code-block (syntax-highlighted blocks are Tier 4).
-    // Inline `code` mark is still active.
-    codeBlock: false,
-    // Configure Link (bundled in StarterKit v3) — no separate import needed.
-    link: {
-      openOnClick: false,
-      autolink: true,
-    },
-    // Underline is also bundled in StarterKit v3 — no separate import needed.
-    // Leave at defaults (enabled).
-  }),
+    StarterKit.configure({
+      codeBlock: false,
+      link: { openOnClick: false, autolink: true },
+    }),
 
-  Placeholder.configure({
-    placeholder: "Start writing…",
-  }),
+    Placeholder.configure({ placeholder: "Start writing…" }),
 
-  // ── Text alignment ─────────────────────────────────────────────────────────
-  TextAlign.configure({
-    types: ["heading", "paragraph"],
-  }),
+    // ── Text alignment ──────────────────────────────────────────────────────
+    TextAlign.configure({ types: ["heading", "paragraph"] }),
 
-  // ── Text color + highlight ─────────────────────────────────────────────────
-  // TextStyle is the base mark required by Color.
-  TextStyle,
-  Color,
-  Highlight.configure({ multicolor: true }),
+    // ── Text color + highlight ──────────────────────────────────────────────
+    TextStyle,
+    Color,
+    Highlight.configure({ multicolor: true }),
 
-  // ── Superscript / subscript ────────────────────────────────────────────────
-  Superscript,
-  Subscript,
+    // ── Superscript / subscript ─────────────────────────────────────────────
+    Superscript,
+    Subscript,
 
-  // ── Task lists (interactive checkboxes) ───────────────────────────────────
-  TaskList,
-  TaskItem.configure({ nested: true }),
+    // ── Task lists ──────────────────────────────────────────────────────────
+    TaskList,
+    TaskItem.configure({ nested: true }),
 
-  // ── Tables ────────────────────────────────────────────────────────────────
-  Table.configure({ resizable: true }),
-  TableRow,
-  TableHeader,
-  TableCell,
+    // ── Tables ──────────────────────────────────────────────────────────────
+    Table.configure({ resizable: true }),
+    TableRow,
+    TableHeader,
+    TableCell,
 
-  // ── Images (base64 inline, no backend) ────────────────────────────────────
-  Image.configure({ inline: false, allowBase64: true }),
+    // ── Images (base64 inline) ──────────────────────────────────────────────
+    Image.configure({ inline: false, allowBase64: true }),
 
-  // ── Syntax-highlighted code blocks ────────────────────────────────────────
-  // Lowlight replaces StarterKit's plain codeBlock (disabled above).
-  // Lazy language packs are loaded on demand via loadLanguage() in lowlight.ts.
-  CodeBlockLowlight.configure({ lowlight }),
+    // ── Syntax-highlighted code blocks ──────────────────────────────────────
+    CodeBlockLowlight.configure({ lowlight }),
 
-  // ── Smart typography (Bucket-B: conditionally included) ───────────────────
-  // When enabled: converts -- → em-dash, straight quotes → curly, etc.
-  // Toggling requires editor recreation — see DocEditor.tsx.
-  ...(smartTypography ? [Typography] : []),
+    // ── Smart typography (Bucket-B) ─────────────────────────────────────────
+    ...(smartTypography ? [Typography] : []),
 
-  // ── Slash menu (/‐triggered insert popover) ───────────────────────────────
-  SlashMenu,
+    // ── Slash menu (/‐triggered insert popover) ─────────────────────────────
+    SlashMenu,
 
-  // ── Find & replace (ProseMirror decoration plugin) ────────────────────────
-  FindReplace,
-];
+    // ── Find & replace ──────────────────────────────────────────────────────
+    FindReplace,
+
+    // ── Tier 3: Footnotes ───────────────────────────────────────────────────
+    FootnoteRef,
+    FootnoteBody,
+    FootnoteCommands,
+
+    // ── Tier 3: Page break ──────────────────────────────────────────────────
+    PageBreak,
+
+    // ── Tier 3: YouTube / Vimeo embeds ─────────────────────────────────────
+    YouTubeEmbed,
+
+    // ── Tier 3: /@ anchor link menu ────────────────────────────────────────
+    AnchorMenu,
+  ];
 }
 
-/**
- * Static extension list (smart typography off).
- * For use when settings are not yet available (e.g. SSR / initial render).
- */
+/** Static extension list (smart typography off). For SSR / initial render. */
 export const extensions = buildExtensions(false);

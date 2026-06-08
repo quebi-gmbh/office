@@ -326,6 +326,166 @@ a:hover {
 }
 
 /* ---------------------------------------------------------------------------
+   Tier 3 — Doc editor extensions
+   --------------------------------------------------------------------------- */
+
+/* ── Paragraph spacing / first-line indent / list style ── */
+
+.ProseMirror p {
+  margin-bottom: var(--doc-paragraph-spacing, 0.75em);
+}
+
+.ProseMirror p + p {
+  text-indent: var(--doc-first-line-indent, 0);
+}
+
+.ProseMirror ol {
+  list-style-type: var(--doc-list-style, decimal);
+}
+
+/* ── Focus mode ──
+   `body[data-focus-mode]` is set by DocEditor when focus mode is active.
+   Hides everything except the editor page column. */
+
+body[data-focus-mode] header,
+body[data-focus-mode] footer,
+body[data-focus-mode] nav {
+  display: none !important;
+}
+
+/* ── Typewriter mode ──
+   Large scroll margins keep the cursor line vertically centred when
+   useTypewriter calls scrollIntoView({ block: "center" }). */
+
+.ProseMirror p,
+.ProseMirror h1,
+.ProseMirror h2,
+.ProseMirror h3,
+.ProseMirror h4,
+.ProseMirror h5,
+.ProseMirror h6,
+.ProseMirror li,
+.ProseMirror blockquote,
+.ProseMirror pre {
+  scroll-margin-top: 40vh;
+  scroll-margin-bottom: 40vh;
+}
+
+/* ── Page breaks ── */
+
+.doc-page-break {
+  border: none;
+  border-top: 2px dashed var(--color-border);
+  margin: 1.5em 0;
+  position: relative;
+}
+
+.doc-page-break::after {
+  content: "page break";
+  position: absolute;
+  top: -0.65em;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--color-bg);
+  padding: 0 0.5em;
+  font-size: 0.7em;
+  color: var(--color-muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+@media print {
+  .doc-page-break {
+    display: block;
+    border: none;
+    break-after: page;
+    page-break-after: always;
+    height: 0;
+    margin: 0;
+  }
+  .doc-page-break::after {
+    display: none;
+  }
+}
+
+/* ── Footnotes ── */
+
+/* Inline superscript reference */
+sup[data-footnote-ref] {
+  color: var(--color-accent);
+  font-size: 0.7em;
+  cursor: default;
+  user-select: none;
+}
+
+/* Body paragraph at the end of the document */
+p[data-footnote-body] {
+  font-size: 0.85em;
+  color: var(--color-muted);
+  border-top: 1px solid var(--color-border);
+  padding-top: 0.5em;
+  margin-top: 1em;
+}
+
+p[data-footnote-body]::before {
+  color: var(--color-accent);
+  font-weight: 600;
+  margin-right: 0.35em;
+}
+
+/* ── YouTube / Vimeo embeds ── */
+
+.doc-youtube-wrapper {
+  position: relative;
+  width: 100%;
+  padding-bottom: 56.25%; /* 16:9 */
+  margin: 1em 0;
+  background: var(--color-card);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.doc-youtube-wrapper iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+  border-radius: 6px;
+}
+
+@media print {
+  .doc-youtube-wrapper {
+    padding-bottom: 0;
+    height: auto;
+  }
+  .doc-youtube-wrapper iframe {
+    display: none;
+  }
+  /* Show the URL as text for print */
+  .doc-youtube-wrapper::after {
+    content: "[Video: " attr(data-src) "]";
+    display: block;
+    padding: 0.5em;
+    font-size: 0.85em;
+    color: var(--color-muted);
+  }
+}
+
+/* ── Print / PDF page rules ── */
+
+@media print {
+  @page {
+    margin: 20mm;
+  }
+
+  @page :first {
+    margin-top: 25mm;
+  }
+}
+
+/* ---------------------------------------------------------------------------
    Legacy BEM rules for views not yet migrated to Tailwind utilities.
    Carried over from the old public/styles.css minus the :root tokens
    (which now live in @theme above). Remove these rules as each view is

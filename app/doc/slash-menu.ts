@@ -94,6 +94,27 @@ function buildItems(editor: Editor): SlashMenuItem[] {
       icon: "—",
       command: () => editor.chain().focus().setHorizontalRule().run(),
     },
+    {
+      title: "Page break",
+      description: "Force a new page in print / PDF",
+      icon: "⊟",
+      command: () => editor.chain().focus().setPageBreak().run(),
+    },
+    {
+      title: "Footnote",
+      description: "Insert a numbered footnote",
+      icon: "fn",
+      command: () => editor.chain().focus().addFootnote().run(),
+    },
+    {
+      title: "YouTube / Vimeo",
+      description: "Embed a video",
+      icon: "▶",
+      command: () => {
+        const url = window.prompt("YouTube or Vimeo URL:");
+        if (url?.trim()) editor.chain().focus().setYoutubeVideo({ src: url.trim() }).run();
+      },
+    },
   ];
 }
 

@@ -25,6 +25,10 @@ import { SwatchPicker } from "./toolbar/SwatchPicker";
 import { TableControls } from "./toolbar/TableControls";
 import { ImageButton } from "./toolbar/ImageButton";
 import { CodeBlockButton } from "./toolbar/CodeBlockButton";
+import { FormatPainterButton } from "./toolbar/FormatPainterButton";
+import { FootnoteButton } from "./toolbar/FootnoteButton";
+import { YouTubeButton } from "./toolbar/YouTubeButton";
+import { PageBreakButton } from "./toolbar/PageBreakButton";
 
 interface Props {
   editor: Editor;
@@ -341,6 +345,9 @@ export function Toolbar({ editor, onSettingsClick }: Props) {
 
       <Divider />
 
+      {/* Format painter */}
+      <FormatPainterButton editor={editor} />
+
       {/* Clear formatting */}
       <ToolBtn
         onClick={() =>
@@ -350,6 +357,13 @@ export function Toolbar({ editor, onSettingsClick }: Props) {
       >
         <RemoveFormatting size={13} />
       </ToolBtn>
+
+      <Divider />
+
+      {/* Tier 3: Footnote / Page break / YouTube */}
+      <FootnoteButton editor={editor} />
+      <PageBreakButton editor={editor} />
+      <YouTubeButton editor={editor} />
 
       {/* Spacer + Settings — pushed to right */}
       {onSettingsClick && (

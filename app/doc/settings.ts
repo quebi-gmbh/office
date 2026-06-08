@@ -3,9 +3,16 @@
  * Storage key: "office:docs:settings"
  *
  * Mirrors the /code editor's settings.ts pattern:
- * - Versioned schema (version: 1) so stale blobs are forward-migrated.
+ * - Versioned schema so stale blobs are forward-migrated.
  * - migrate() deep-merges unknown localStorage data over defaults, dropping
  *   unknown keys and always re-stamping the current version.
+ *
+ * Version history:
+ *   1 → original Tier 2 settings
+ *   2 → Tier 3: added behaviour.focusMode, behaviour.typewriterMode,
+ *               behaviour.targetWords, behaviour.versionIntervalMin;
+ *               typography.paragraphSpacing, typography.firstLineIndent,
+ *               typography.listStyle, typography.headingStyle, typography.customCss
  */
 
 export const SETTINGS_STORAGE_KEY = "office:docs:settings";
@@ -15,51 +22,52 @@ export type FontFamily = "serif" | "sans" | "mono";
 export type AutosaveMs = 500 | 1000 | 5000;
 export type OutlineMode = "auto" | "always" | "off";
 export type ThemeMode = "auto" | "light" | "dark";
+export type ListStyle =
+  | "decimal"
+  | "lower-alpha"
+  | "lower-roman"
+  | "upper-alpha"
+  | "upper-roman";
 
 export type DocSettings = {
-  version: 1;
+  version: 2;
   page: {
-    /** Max content width of the centered page area. */
     width: PageWidth;
   };
   typography: {
-    /** Base body font family for the document content. */
     fontFamily: FontFamily;
-    /** Base font size in px applied to .ProseMirror. */
     fontSizeBase: number;
-    /** Line height multiplier. */
     lineHeight: number;
-    /**
-     * Enable @tiptap/extension-typography (smart quotes, em-dashes, …).
-     * Toggling this requires editor recreation — see DocEditor.tsx.
-     */
     smartTypography: boolean;
+    /** Paragraph bottom margin in em (0.25–2.0). */
+    paragraphSpacing: number;
+    /** First-line indent in em (0 = off). */
+    firstLineIndent: number;
+    /** Ordered list numbering style. */
+    listStyle: ListStyle;
+    /** Additional CSS injected scoped to .ProseMirror. */
+    customCss: string;
   };
   behaviour: {
-    /** Pass spellcheck attribute to the editor surface. */
     spellCheck: boolean;
-    /** Debounce delay (ms) between last keystroke and autosave. */
     autosaveMs: AutosaveMs;
-    /**
-     * Outline panel visibility:
-     *   auto   — show when the doc has ≥ 1 heading (default)
-     *   always — always visible
-     *   off    — never shown
-     */
     outline: OutlineMode;
+    /** Hide toolbar/sidebars — only the page remains. */
+    focusMode: boolean;
+    /** Keep active line vertically centred while typing. */
+    typewriterMode: boolean;
+    /** Target word count (0 = off). */
+    targetWords: number;
+    /** Auto-snapshot interval in minutes (0 = off). */
+    versionIntervalMin: number;
   };
   theme: {
-    /**
-     * "auto"  — follow prefers-color-scheme (default; no data-theme override)
-     * "light" — force light tokens via :root[data-theme="light"]
-     * "dark"  — force dark tokens  via :root[data-theme="dark"]
-     */
     mode: ThemeMode;
   };
 };
 
 export const defaults: DocSettings = {
-  version: 1,
+  version: 2,
   page: {
     width: "comfortable",
   },
@@ -68,11 +76,19 @@ export const defaults: DocSettings = {
     fontSizeBase: 16,
     lineHeight: 1.7,
     smartTypography: false,
+    paragraphSpacing: 0.75,
+    firstLineIndent: 0,
+    listStyle: "decimal",
+    customCss: "",
   },
   behaviour: {
     spellCheck: true,
     autosaveMs: 1000,
     outline: "auto",
+    focusMode: false,
+    typewriterMode: false,
+    targetWords: 0,
+    versionIntervalMin: 5,
   },
   theme: {
     mode: "auto",
@@ -87,7 +103,6 @@ export function migrate(raw: unknown): DocSettings {
   if (!raw || typeof raw !== "object") return defaults;
   const r = raw as Record<string, unknown>;
 
-  // Deep merge: only copy keys that exist in defaults so unknown keys are dropped.
   function merge<T extends object>(def: T, src: unknown): T {
     if (!src || typeof src !== "object") return def;
     const s = src as Record<string, unknown>;
@@ -109,6 +124,5 @@ export function migrate(raw: unknown): DocSettings {
   }
 
   const merged = merge(defaults, r);
-  // Always stamp the current version
-  return { ...merged, version: 1 };
+  return { ...merged, version: 2 };
 }

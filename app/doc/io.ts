@@ -297,6 +297,150 @@ export async function decodeShareHash(
   }
 }
 
+// ── Binary download ───────────────────────────────────────────────────────────
+
+/** Download a binary blob to the user's device. */
+export function downloadBinary(
+  data: ArrayBuffer | Blob,
+  filename: string,
+  mime = "application/octet-stream",
+): void {
+  const blob =
+    data instanceof Blob ? data : new Blob([data], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+// ── .docx import ──────────────────────────────────────────────────────────────
+
+/**
+ * Open a .docx file and import its content into the editor.
+ * Uses mammoth (lazy) to convert OOXML → HTML, then sanitizes and loads.
+ */
+export async function importDocx(editor: Editor): Promise<void> {
+  const buf = await pickDocxBuffer();
+  if (!buf) return;
+
+  const [mammoth, { default: DOMPurify }] = await Promise.all([
+    import("mammoth"),
+    import("dompurify"),
+  ]);
+  const result = await (mammoth.default ?? mammoth).convertToHtml({ arrayBuffer: buf });
+  const clean = DOMPurify.sanitize(result.value);
+  editor.commands.setContent(clean);
+}
+
+async function pickDocxBuffer(): Promise<ArrayBuffer | null> {
+  if (typeof window !== "undefined" && "showOpenFilePicker" in window) {
+    try {
+      const [handle] = await (
+        window as Window & {
+          showOpenFilePicker: (opts?: unknown) => Promise<FileSystemFileHandle[]>;
+        }
+      ).showOpenFilePicker({
+        types: [
+          {
+            description: "Word document",
+            accept: {
+              "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+                [".docx"],
+            },
+          },
+        ],
+        multiple: false,
+      });
+      const file = await handle.getFile();
+      return file.arrayBuffer();
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return null;
+      // FSA failed — fall through
+    }
+  }
+
+  return new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".docx";
+    input.onchange = () => {
+      const file = input.files?.[0];
+      if (!file) { resolve(null); return; }
+      file.arrayBuffer().then(resolve).catch(() => resolve(null));
+    };
+    input.oncancel = () => resolve(null);
+    input.click();
+  });
+}
+
+// ── .docx export ──────────────────────────────────────────────────────────────
+
+/**
+ * Export the editor content as a .docx file.
+ * Uses the docx-mapper (lazy) to build the Word document, then downloads it.
+ *
+ * Known losses: embedded images are omitted; syntax highlighting is stripped
+ * to plain text. See docx-mapper.ts for the full conversion notes.
+ */
+export async function exportDocx(editor: Editor, title: string): Promise<void> {
+  const { jsonToDocxBlob } = await import("./docx-mapper");
+  const blob = await jsonToDocxBlob(editor.getJSON(), title);
+  downloadBinary(
+    blob,
+    filenameFromTitle(title, "docx"),
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  );
+}
+
+// ── PDF export ────────────────────────────────────────────────────────────────
+
+/**
+ * Print the document as PDF.
+ * Injects an explicit @page rule for A4 margins + page counter, then triggers
+ * the browser's print dialog. The rule is removed on afterprint.
+ */
+export function exportPdf(): void {
+  const id = "doc-pdf-page-rule";
+  if (!document.getElementById(id)) {
+    const style = document.createElement("style");
+    style.id = id;
+    style.textContent = `
+@page {
+  size: A4;
+  margin: 20mm;
+}
+@page :first { margin-top: 25mm; }
+    `.trim();
+    document.head.appendChild(style);
+  }
+  window.print();
+  window.addEventListener(
+    "afterprint",
+    () => document.getElementById(id)?.remove(),
+    { once: true },
+  );
+}
+
+// ── PNG export ────────────────────────────────────────────────────────────────
+
+/**
+ * Capture the ProseMirror editor element as a PNG image and download it.
+ * html-to-image is lazy-loaded (already bundled, ~50 KB).
+ */
+export async function exportDocPng(
+  el: HTMLElement,
+  filename: string,
+): Promise<void> {
+  const { toPng } = await import("html-to-image");
+  const dataUrl = await toPng(el, { pixelRatio: 2 });
+  const a = document.createElement("a");
+  a.href = dataUrl;
+  a.download = filename;
+  a.click();
+}
+
 // ── Compression helpers ───────────────────────────────────────────────────────
 
 async function gzipBase64url(text: string): Promise<string> {

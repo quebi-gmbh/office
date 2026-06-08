@@ -1,9 +1,6 @@
 /**
  * Doc editor file menu — a compact dropdown button in the toolbar.
  * Mirrors the shape of app/lib/code-editor/file-menu.tsx.
- *
- * Actions: Open, Save (Markdown), Export HTML, Print, Copy as HTML,
- * Copy as Markdown, Share URL.
  */
 import { useEffect, useRef, useState } from "react";
 import { FileText } from "lucide-react";
@@ -13,8 +10,12 @@ import {
   openDocument,
   importMarkdown,
   importHtml,
+  importDocx,
   exportMarkdown,
   exportHtml,
+  exportDocx,
+  exportPdf,
+  exportDocPng,
   downloadFile,
   copyAsHtml,
   copyAsMarkdown,
@@ -26,19 +27,32 @@ import type { DocSettings } from "./settings";
 
 export type FileMenuAction =
   | "open"
+  | "import-docx"
   | "save-md"
   | "export-html"
+  | "export-docx"
+  | "export-pdf"
+  | "export-png"
   | "print"
   | "copy-html"
   | "copy-md"
-  | "share";
+  | "share"
+  | "snapshot"
+  | "history"
+  | "new-from-template"
+  | "save-as-template";
 
 interface FileMenuProps {
   editor: Editor;
   title: string;
   settings: DocSettings;
   dirty: boolean;
-  onImported: () => void; // called after a successful import so autosave fires
+  /** Called after a successful import so autosave fires. */
+  onImported: () => void;
+  /** Opens the version history drawer. */
+  onOpenHistory?: () => void;
+  /** Opens the template picker drawer. */
+  onNewFromTemplate?: () => void;
 }
 
 type MenuItem = {
@@ -49,16 +63,32 @@ type MenuItem = {
 };
 
 const ITEMS: MenuItem[] = [
-  { label: "Open…", action: "open", shortcut: "Ctrl+O" },
-  { label: "Save as Markdown", action: "save-md", shortcut: "Ctrl+S", separator: true },
-  { label: "Export as HTML", action: "export-html" },
-  { label: "Print", action: "print", separator: true },
-  { label: "Copy as HTML", action: "copy-html" },
-  { label: "Copy as Markdown", action: "copy-md", separator: true },
-  { label: "Share via URL", action: "share" },
+  { label: "Open…",                  action: "open",             shortcut: "Ctrl+O" },
+  { label: "Import Word (.docx)…",   action: "import-docx" },
+  { label: "New from template…",     action: "new-from-template", separator: true },
+  { label: "Save as Markdown",       action: "save-md",          shortcut: "Ctrl+S" },
+  { label: "Export as HTML",         action: "export-html" },
+  { label: "Export as Word (.docx)", action: "export-docx" },
+  { label: "Export as PDF",          action: "export-pdf" },
+  { label: "Export as PNG image",    action: "export-png",        separator: true },
+  { label: "Save snapshot",          action: "snapshot" },
+  { label: "Version history…",       action: "history",           shortcut: "Ctrl+Shift+H" },
+  { label: "Save as template…",      action: "save-as-template",  separator: true },
+  { label: "Print",                  action: "print" },
+  { label: "Copy as HTML",           action: "copy-html" },
+  { label: "Copy as Markdown",       action: "copy-md",           separator: true },
+  { label: "Share via URL",          action: "share" },
 ];
 
-export function FileMenu({ editor, title, settings, dirty, onImported }: FileMenuProps) {
+export function FileMenu({
+  editor,
+  title,
+  settings,
+  dirty,
+  onImported,
+  onOpenHistory,
+  onNewFromTemplate,
+}: FileMenuProps) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const { show, ToastContainer } = useToast();
@@ -95,6 +125,14 @@ export function FileMenu({ editor, title, settings, dirty, onImported }: FileMen
         onImported();
         break;
       }
+      case "import-docx": {
+        if (dirty) {
+          if (!confirm("You have unsaved changes. Discard and import a Word document?")) return;
+        }
+        await importDocx(editor);
+        onImported();
+        break;
+      }
       case "save-md": {
         const md = await exportMarkdown(editor);
         downloadFile(md, filenameFromTitle(title, "md"), "text/markdown");
@@ -103,6 +141,19 @@ export function FileMenu({ editor, title, settings, dirty, onImported }: FileMen
       case "export-html": {
         const html = exportHtml(editor, title, settings);
         downloadFile(html, filenameFromTitle(title, "html"), "text/html");
+        break;
+      }
+      case "export-docx": {
+        await exportDocx(editor, title);
+        break;
+      }
+      case "export-pdf": {
+        exportPdf();
+        break;
+      }
+      case "export-png": {
+        const el = editor.view.dom as HTMLElement;
+        await exportDocPng(el, filenameFromTitle(title, "png"));
         break;
       }
       case "print": {
@@ -127,6 +178,28 @@ export function FileMenu({ editor, title, settings, dirty, onImported }: FileMen
         } else {
           show("Share URL copied to clipboard");
         }
+        break;
+      }
+      case "snapshot": {
+        const { saveVersion } = await import("./versioning");
+        saveVersion(title || "Untitled", editor.getJSON());
+        show("Snapshot saved");
+        break;
+      }
+      case "history": {
+        onOpenHistory?.();
+        break;
+      }
+      case "new-from-template": {
+        onNewFromTemplate?.();
+        break;
+      }
+      case "save-as-template": {
+        const name = window.prompt("Template name:");
+        if (!name?.trim()) return;
+        const { saveCustomTemplate } = await import("./templates/storage");
+        saveCustomTemplate(name.trim(), title, editor.getJSON());
+        show(`Template "${name.trim()}" saved`);
         break;
       }
     }
@@ -161,7 +234,7 @@ export function FileMenu({ editor, title, settings, dirty, onImported }: FileMen
         {open && (
           <div
             role="menu"
-            className="absolute left-0 top-full z-50 mt-1 min-w-[200px] rounded border border-border bg-bg py-1 shadow-lg"
+            className="absolute left-0 top-full z-50 mt-1 min-w-[220px] rounded border border-border bg-bg py-1 shadow-lg"
           >
             {ITEMS.map((item) => (
               <div key={item.action}>
