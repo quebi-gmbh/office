@@ -59,7 +59,7 @@ export default function Root() {
             Code
           </NavLink>
           <NavLink
-            to="/doc"
+            to="/docs"
             className={({ isActive }) => (isActive ? "text-accent" : "")}
           >
             Doc
