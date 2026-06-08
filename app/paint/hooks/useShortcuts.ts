@@ -35,19 +35,27 @@ function matchesKeys(e: KeyboardEvent, keys: string): boolean {
 
   if (requireMod && !e.getModifierState(modKey())) return false;
   if (requireShift && !e.shiftKey) return false;
-  if (!requireShift && e.shiftKey && !keys.includes("Shift")) return false;
   if (requireAlt && !e.altKey) return false;
   if (!requireAlt && e.altKey) return false;
   // Don't fire if unexpected modifiers are pressed.
   if (!requireMod && e.getModifierState(modKey())) return false;
 
   // Letter codes: single uppercase letter → e.code = 'KeyX'
-  if (/^[A-Z]$/.test(keyPart)) return e.code === `Key${keyPart}`;
-  // Digits
-  if (/^[0-9]$/.test(keyPart)) return e.code === `Digit${keyPart}`;
+  // Reject if Shift is held unexpectedly (Shift+B ≠ B shortcut, but ? = Shift+/ on purpose).
+  if (/^[A-Z]$/.test(keyPart)) {
+    if (!requireShift && e.shiftKey) return false;
+    return e.code === `Key${keyPart}`;
+  }
+  // Digits — same rationale: Shift+1 = "!" on US layout, not "1".
+  if (/^[0-9]$/.test(keyPart)) {
+    if (!requireShift && e.shiftKey) return false;
+    return e.code === `Digit${keyPart}`;
+  }
   // Named keys
   if (keyPart === "Escape") return e.key === "Escape";
-  // Symbols — compare e.key
+  // Symbols (?, [, ], Delete, Backspace, …) — compare e.key directly.
+  // e.key already encodes the shift state: "/" → "/", "?" → "?", so no extra
+  // shift-guard is needed; the comparison itself handles it.
   return e.key === keyPart;
 }
 
