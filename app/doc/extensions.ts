@@ -34,6 +34,7 @@ import { CodeBlockLowlight } from "@tiptap/extension-code-block-lowlight";
 import { Typography } from "@tiptap/extension-typography";
 import { lowlight } from "./lowlight";
 import { SlashMenu } from "./slash-menu";
+import { FindReplace } from "./find-replace/plugin";
 
 /**
  * Build the extension array for the given settings.
@@ -100,6 +101,9 @@ export function buildExtensions(smartTypography = false) {
 
   // ── Slash menu (/‐triggered insert popover) ───────────────────────────────
   SlashMenu,
+
+  // ── Find & replace (ProseMirror decoration plugin) ────────────────────────
+  FindReplace,
 ];
 }
 

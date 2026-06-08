@@ -21,6 +21,8 @@ import { useDocDraft } from "./useDocDraft";
 import { useDocsSettings } from "./settings-context";
 import { applyDocSettings, cleanupDocSettings } from "./apply-settings";
 import { DocSettingsDrawer } from "./settings-drawer";
+import { FindReplace as FindReplaceModal } from "./find-replace/FindReplace";
+import { Outline } from "./outline/Outline";
 import { Toolbar } from "./Toolbar";
 import { StatusBar } from "./StatusBar";
 
@@ -29,9 +31,13 @@ import { StatusBar } from "./StatusBar";
 function DocEditorCore({
   smartTypography,
   onSettingsClick,
+  findOpen,
+  onFindClose,
 }: {
   smartTypography: boolean;
   onSettingsClick: () => void;
+  findOpen: boolean;
+  onFindClose: () => void;
 }) {
   const { settings } = useDocsSettings();
 
@@ -165,8 +171,26 @@ function DocEditorCore({
         className="mb-4 w-full border-b border-transparent bg-transparent text-3xl font-bold tracking-tight text-fg placeholder:text-muted/50 focus:border-border focus:outline-none"
       />
 
-      {/* Editor body */}
-      <EditorContent editor={editor} className="flex-1" />
+      {/* Editor body + optional outline (side by side) */}
+      <div className="relative flex flex-1 gap-0 min-h-0">
+        <div className="flex-1 min-w-0">
+          <EditorContent editor={editor} />
+        </div>
+
+        {/* Outline panel */}
+        {editor && (
+          <Outline editor={editor} mode={settings.behaviour.outline} />
+        )}
+
+        {/* Find & Replace modal (absolutely positioned over the editor) */}
+        {editor && (
+          <FindReplaceModal
+            editor={editor}
+            open={findOpen}
+            onClose={onFindClose}
+          />
+        )}
+      </div>
 
       {/* Status bar */}
       {editor && <StatusBar editor={editor} />}
@@ -179,6 +203,7 @@ function DocEditorCore({
 export function DocEditor() {
   const { settings } = useDocsSettings();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [findOpen, setFindOpen] = useState(false);
 
   // ── Apply Bucket-A settings (CSS vars + theme) ────────────────────────────
   const pageRef = useRef<HTMLDivElement>(null);
@@ -198,6 +223,10 @@ export function DocEditor() {
       if (mod && e.key === ",") {
         e.preventDefault();
         setDrawerOpen(true);
+      }
+      if (mod && e.key === "f") {
+        e.preventDefault();
+        setFindOpen(true);
       }
     }
     window.addEventListener("keydown", handleKeyDown);
@@ -221,6 +250,8 @@ export function DocEditor() {
           key={smartTypoKey}
           smartTypography={settings.typography.smartTypography}
           onSettingsClick={() => setDrawerOpen(true)}
+          findOpen={findOpen}
+          onFindClose={() => setFindOpen(false)}
         />
       </div>
 
