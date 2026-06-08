@@ -7,7 +7,7 @@ Hosted publicly via GitHub Pages at **[office.quebi.de](https://office.quebi.de)
 ## Tools
 
 - **Code editor** — [office.quebi.de/code](https://office.quebi.de/code) — full-featured CodeMirror 6 editor with 20+ language modes, linting, Prettier formatting, Vim/Emacs keymaps, Markdown preview, and share-by-URL. See [Code editor docs](docs/code-editor.md).
-- **Document editor** — [office.quebi.de/doc](https://office.quebi.de/doc) — rich-text editor for notes and documents (coming soon).
+- **Document editor** — [office.quebi.de/docs](https://office.quebi.de/docs) — rich-text editor for notes and documents (coming soon).
 - **Paint** — [office.quebi.de/paint](https://office.quebi.de/paint) — simple Paint-like drawing tool.
 
 More tools may follow.
@@ -70,7 +70,7 @@ Pushes to `main` build and deploy via `.github/workflows/deploy.yml`. The build:
 
 1. Bundles to `dist/` with `Bun.build`
 2. Copies `public/` (including `CNAME`) into `dist/`
-3. Writes `dist/404.html` as a copy of `index.html` so deep links like `/code`, `/doc`, and `/paint` survive a hard refresh on GitHub Pages.
+3. Writes `dist/404.html` as a copy of `index.html` so deep links like `/code`, `/docs`, and `/paint` survive a hard refresh on GitHub Pages.
 
 DNS: point `office` (CNAME) at `<user>.github.io`.
 

@@ -1,5 +1,5 @@
 import { DocEditor } from "~/doc/DocEditor";
 
-export default function Doc() {
+export default function Docs() {
   return <DocEditor />;
 }

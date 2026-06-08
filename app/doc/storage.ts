@@ -1,6 +1,6 @@
 import type { JSONContent } from "@tiptap/react";
 
-export const STORAGE_KEY = "office:doc:draft";
+export const STORAGE_KEY = "office:docs:draft";
 
 export type DocDraft = {
   title: string;

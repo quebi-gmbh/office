@@ -19,7 +19,7 @@ const tools: Tool[] = [
     icon: <Code2 size={20} aria-hidden />,
   },
   {
-    to: "/doc",
+    to: "/docs",
     name: "Document editor",
     blurb: "A rich-text editor for notes and documents.",
     status: "live",
