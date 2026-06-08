@@ -9,6 +9,7 @@ import {
   Quote,
   Redo,
   RemoveFormatting,
+  Settings,
   Strikethrough,
   Underline,
   Undo,
@@ -16,6 +17,7 @@ import {
 
 interface Props {
   editor: Editor;
+  onSettingsClick?: () => void;
 }
 
 /** Base button class — mirrors the established app button style. */
@@ -68,7 +70,7 @@ function promptLink(currentUrl: string): string | undefined {
   return url.trim();
 }
 
-export function Toolbar({ editor }: Props) {
+export function Toolbar({ editor, onSettingsClick }: Props) {
   const headingLevel = [1, 2, 3, 4, 5, 6].find((l) =>
     editor.isActive("heading", { level: l }),
   );
@@ -106,6 +108,7 @@ export function Toolbar({ editor }: Props) {
       aria-label="Formatting toolbar"
       className="flex flex-wrap items-center gap-1 border-b border-border bg-bg px-3 py-1.5"
     >
+      {/* Settings button — pushed to the right via ml-auto on the spacer */}
       {/* Undo / Redo */}
       <ToolBtn
         onClick={() => editor.chain().focus().undo().run()}
@@ -228,6 +231,20 @@ export function Toolbar({ editor }: Props) {
       >
         <RemoveFormatting size={13} />
       </ToolBtn>
+
+      {/* Spacer + Settings */}
+      {onSettingsClick && (
+        <>
+          <span className="ml-auto" aria-hidden />
+          <Divider />
+          <ToolBtn
+            onClick={onSettingsClick}
+            title="Settings (Ctrl+,)"
+          >
+            <Settings size={13} />
+          </ToolBtn>
+        </>
+      )}
     </div>
   );
 }

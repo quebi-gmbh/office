@@ -35,6 +35,28 @@
   }
 }
 
+/* Force theme overrides — set by DocSettings when theme.mode !== "auto".
+   :root[data-theme="light/dark"] has higher specificity (0,2,0) than the
+   bare :root inside the @media block (0,1,0), so these always win. */
+:root[data-theme="light"] {
+  --color-bg: #fafafa;
+  --color-fg: #18181b;
+  --color-muted: #71717a;
+  --color-border: #e4e4e7;
+  --color-accent: #1d4ed8;
+  --color-live: #16a34a;
+  --color-card: #ffffff;
+}
+:root[data-theme="dark"] {
+  --color-bg: #0a0a0a;
+  --color-fg: #f4f4f5;
+  --color-muted: #a1a1aa;
+  --color-border: #27272a;
+  --color-accent: #60a5fa;
+  --color-live: #4ade80;
+  --color-card: #18181b;
+}
+
 /* Base — structural, not utility-shaped, so kept as plain CSS. */
 html,
 body,
@@ -81,13 +103,16 @@ a:hover {
    so dark mode flips automatically via the media query above.
    --------------------------------------------------------------------------- */
 
-/* Editor surface */
+/* Editor surface.
+   --doc-font / --doc-font-size / --doc-line-height are set by applyDocSettings()
+   on the page wrapper element; they inherit down to .ProseMirror automatically. */
 .ProseMirror {
   min-height: 60vh;
   outline: none;
   color: var(--color-fg);
-  font-size: 1rem;
-  line-height: 1.7;
+  font-family: var(--doc-font, var(--font-sans));
+  font-size: var(--doc-font-size, 1rem);
+  line-height: var(--doc-line-height, 1.7);
 }
 
 /* Paragraph & vertical rhythm */
