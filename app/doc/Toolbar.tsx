@@ -24,6 +24,7 @@ import {
 import { SwatchPicker } from "./toolbar/SwatchPicker";
 import { TableControls } from "./toolbar/TableControls";
 import { ImageButton } from "./toolbar/ImageButton";
+import { CodeBlockButton } from "./toolbar/CodeBlockButton";
 
 interface Props {
   editor: Editor;
@@ -334,6 +335,9 @@ export function Toolbar({ editor, onSettingsClick }: Props) {
 
       {/* Image */}
       <ImageButton editor={editor} />
+
+      {/* Code block */}
+      <CodeBlockButton editor={editor} />
 
       <Divider />
 
