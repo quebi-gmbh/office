@@ -15,9 +15,11 @@ import { createHistory } from "~/paint/lib/history";
 import { createStore } from "~/paint/lib/store";
 import { loadColourPrefs, saveColourPrefs, addToRecents } from "~/paint/lib/colourStore";
 import type {
+  AnchorPoint,
   EngineState,
   Modifiers,
   PaintContext,
+  SelectionRect,
   Tool,
   ToolId,
 } from "~/paint/lib/types";
@@ -30,6 +32,8 @@ import { ellipse } from "~/paint/tools/ellipse";
 import { fill } from "~/paint/tools/fill";
 import { eyedropper } from "~/paint/tools/eyedropper";
 import { text } from "~/paint/tools/text";
+import { select } from "~/paint/tools/select";
+import { copyToClipboard } from "~/paint/io/export";
 
 // ─── Registry of available tools ────────────────────────────────────────────
 
@@ -43,6 +47,7 @@ const TOOLS: Record<ToolId, Tool> = {
   fill,
   eyedropper,
   text,
+  select,
 };
 
 // ─── Default state ────────────────────────────────────────────────────────────
@@ -72,6 +77,7 @@ const DEFAULT_STATE: EngineState = {
   recentColours: [],
   autosaveAvailable: true,
   textOverlay: null,
+  selection: null,
 };
 
 // ─── Engine interface ─────────────────────────────────────────────────────────
@@ -112,10 +118,28 @@ export interface Engine {
   /** Export shortcuts — set by PaintApp after mount. */
   openExportDialog?(): void;
   quickSavePng?(): void;
+  /** New-document dialog — set by PaintApp after mount. */
+  openNewDialog?(): void;
   /** Push a history snapshot immediately (used after external canvas writes, e.g. import). */
   snapshotNow(): void;
   isDragging: boolean;
   dispose(): void;
+
+  // ── Selection
+  setSelection(rect: SelectionRect): void;
+  clearSelection(): void;
+  selectAll(): void;
+
+  // ── Clipboard
+  copySelection(): Promise<void>;
+  cutSelection(): Promise<void>;
+  clearRegion(rect?: SelectionRect): void;
+
+  // ── Canvas sizing (each is one undoable step)
+  cropToSelection(): void;
+  resizeCanvas(w: number, h: number, anchor: AnchorPoint): void;
+  scaleImage(w: number, h: number): void;
+  trimTransparent(): void;
 }
 
 // ─── Factory ──────────────────────────────────────────────────────────────────
@@ -139,6 +163,11 @@ export function createEngine(): Engine {
   let dragging = false;
   let activePointerId = -1;
 
+  // Marching-ants animation state.
+  let rafId = 0;
+  let dashOffset = 0;
+  let antsLastTime = -1;
+
   // ─── Helpers ────────────────────────────────────────────────────────────────
 
   function getState(): EngineState {
@@ -153,18 +182,12 @@ export function createEngine(): Engine {
   function toDocCoords(clientX: number, clientY: number): { x: number; y: number } {
     if (!previewCanvas) return { x: 0, y: 0 };
     const s = getState();
-    const rect = previewCanvas.getBoundingClientRect();
-    // Account for pan and zoom, which are applied as CSS transform on the canvas wrapper.
-    // The CSS transform is: translate(panX, panY) scale(zoom) applied to the wrapper;
-    // the canvas intrinsic size is doc.width × doc.height.
-    // CSS displayed size = doc.width * zoom (approximately, ignoring pan for client rect).
-    // Actually: getBoundingClientRect() already accounts for CSS transforms applied to the
-    // element (it returns the visual rect). So we just scale from display to intrinsic.
-    const scaleX = s.doc.width / rect.width;
-    const scaleY = s.doc.height / rect.height;
+    const r = previewCanvas.getBoundingClientRect();
+    const scaleX = s.doc.width / r.width;
+    const scaleY = s.doc.height / r.height;
     return {
-      x: (clientX - rect.left) * scaleX,
-      y: (clientY - rect.top) * scaleY,
+      x: (clientX - r.left) * scaleX,
+      y: (clientY - r.top) * scaleY,
     };
   }
 
@@ -212,6 +235,14 @@ export function createEngine(): Engine {
           return { ...st, bg: c };
         });
       },
+
+      setSelection(r) {
+        setSelectionInternal(r);
+      },
+
+      clearSelection() {
+        clearSelectionInternal();
+      },
     };
   }
 
@@ -258,6 +289,58 @@ export function createEngine(): Engine {
       saveColourPrefs({ fg: c, bg: st.bg, recents });
       return next;
     });
+  }
+
+  function setSelectionInternal(r: SelectionRect): void {
+    updateState((st) => ({ ...st, selection: r }));
+  }
+
+  function clearSelectionInternal(): void {
+    updateState((st) => ({ ...st, selection: null }));
+  }
+
+  // ─── Marching-ants rAF loop ────────────────────────────────────────────────
+
+  function animateAnts(time: number): void {
+    rafId = requestAnimationFrame(animateAnts);
+    if (!previewCtx) return;
+
+    // While a pointer drag is in progress, the active tool owns the preview canvas.
+    if (dragging) return;
+
+    const s = getState();
+    const { width, height } = s.doc;
+
+    if (!s.selection) {
+      // If we were drawing ants before, clear them. We track this by checking
+      // whether dashOffset has advanced (i.e. the loop has been running).
+      if (antsLastTime >= 0) {
+        previewCtx.clearRect(0, 0, width, height);
+        antsLastTime = -1;
+      }
+      return;
+    }
+
+    // Advance the dash offset for animation (~20 px/s).
+    if (antsLastTime < 0) antsLastTime = time;
+    const dt = time - antsLastTime;
+    antsLastTime = time;
+    dashOffset = (dashOffset + dt * 0.02) % 8;
+
+    const { x, y, w, h } = s.selection;
+    previewCtx.clearRect(0, 0, width, height);
+    previewCtx.save();
+    previewCtx.lineWidth = 1;
+    previewCtx.setLineDash([4, 4]);
+    // White dashes
+    previewCtx.strokeStyle = "rgba(255,255,255,0.9)";
+    previewCtx.lineDashOffset = -dashOffset;
+    previewCtx.strokeRect(x + 0.5, y + 0.5, w, h);
+    // Black dashes interleaved
+    previewCtx.strokeStyle = "rgba(0,0,0,0.9)";
+    previewCtx.lineDashOffset = -dashOffset + 4;
+    previewCtx.strokeRect(x + 0.5, y + 0.5, w, h);
+    previewCtx.restore();
   }
 
   // ─── Modifier tracking ──────────────────────────────────────────────────────
@@ -322,7 +405,6 @@ export function createEngine(): Engine {
     // Text tool signals overlay request via scratch.
     if (scratch.requestOverlay) {
       scratch.requestOverlay = false;
-      const s = getState();
       updateState((st) => ({
         ...st,
         textOverlay: {
@@ -345,6 +427,44 @@ export function createEngine(): Engine {
 
     const tool = TOOLS[getState().tool];
     tool.onCancel?.(ctx);
+  }
+
+  // ─── Canvas resize helper ─────────────────────────────────────────────────
+  //
+  // Resize both canvases to (newW × newH), call paint() to draw new content
+  // from the old pixels, update doc state, and push one history snapshot.
+  // Undo/redo will restore the previous snapshot — including its dimensions.
+
+  function applyResize(
+    newW: number,
+    newH: number,
+    paint: (ctx: CanvasRenderingContext2D, old: HTMLCanvasElement) => void,
+  ): void {
+    if (!mainCtx || !previewCtx || !mainCanvas || !previewCanvas) return;
+
+    // Capture current pixels into an offscreen canvas before resizing.
+    const offscreen = document.createElement("canvas");
+    offscreen.width = mainCanvas.width;
+    offscreen.height = mainCanvas.height;
+    offscreen.getContext("2d")!.drawImage(mainCanvas, 0, 0);
+
+    // Resizing a canvas element clears it.
+    mainCanvas.width = newW;
+    mainCanvas.height = newH;
+    previewCanvas.width = newW;
+    previewCanvas.height = newH;
+
+    // Let the caller paint new content from the old pixels.
+    paint(mainCtx, offscreen);
+
+    // Update observable doc dimensions (pushSnapshot reads these).
+    updateState((st) => ({
+      ...st,
+      doc: { ...st.doc, width: newW, height: newH },
+    }));
+
+    // One history snapshot at the new dimensions.
+    pushSnapshot();
   }
 
   // ─── Engine public API ──────────────────────────────────────────────────────
@@ -372,6 +492,9 @@ export function createEngine(): Engine {
 
       window.addEventListener("keydown", onKeyDown, true);
       window.addEventListener("keyup", onKeyUp, true);
+
+      // Start the marching-ants rAF loop.
+      rafId = requestAnimationFrame(animateAnts);
     },
 
     onPointerDown,
@@ -444,26 +567,42 @@ export function createEngine(): Engine {
     },
 
     undo() {
-      if (!mainCtx) return;
+      if (!mainCtx || !mainCanvas || !previewCanvas) return;
       const snap = history.undo();
       if (!snap) return;
+      // Dimension-aware restore: resize canvases if the snapshot is a different size.
+      if (snap.width !== mainCanvas.width || snap.height !== mainCanvas.height) {
+        mainCanvas.width = snap.width;
+        mainCanvas.height = snap.height;
+        previewCanvas.width = snap.width;
+        previewCanvas.height = snap.height;
+      }
       mainCtx.putImageData(snap, 0, 0);
       updateState((st) => ({
         ...st,
         canUndo: history.canUndo(),
         canRedo: history.canRedo(),
+        doc: { ...st.doc, width: snap.width, height: snap.height },
       }));
     },
 
     redo() {
-      if (!mainCtx) return;
+      if (!mainCtx || !mainCanvas || !previewCanvas) return;
       const snap = history.redo();
       if (!snap) return;
+      // Dimension-aware restore.
+      if (snap.width !== mainCanvas.width || snap.height !== mainCanvas.height) {
+        mainCanvas.width = snap.width;
+        mainCanvas.height = snap.height;
+        previewCanvas.width = snap.width;
+        previewCanvas.height = snap.height;
+      }
       mainCtx.putImageData(snap, 0, 0);
       updateState((st) => ({
         ...st,
         canUndo: history.canUndo(),
         canRedo: history.canRedo(),
+        doc: { ...st.doc, width: snap.width, height: snap.height },
       }));
     },
 
@@ -478,6 +617,7 @@ export function createEngine(): Engine {
         ...st,
         doc: { width, height, bgWasTransparent: bg === "transparent" },
         bg: bg === "transparent" ? st.bg : bg,
+        selection: null,
       }));
       initCanvas(width, height, bg);
     },
@@ -486,11 +626,144 @@ export function createEngine(): Engine {
     resetZoom: undefined,
     openExportDialog: undefined,
     quickSavePng: undefined,
+    openNewDialog: undefined,
     snapshotNow: pushSnapshot,
+
+    // ── Selection
+
+    setSelection(r) {
+      setSelectionInternal(r);
+    },
+
+    clearSelection() {
+      clearSelectionInternal();
+    },
+
+    selectAll() {
+      const s = getState();
+      setSelectionInternal({ x: 0, y: 0, w: s.doc.width, h: s.doc.height });
+    },
+
+    // ── Clipboard
+
+    async copySelection() {
+      if (!mainCtx || !mainCanvas) return;
+      const s = getState();
+      const region = s.selection ?? { x: 0, y: 0, w: s.doc.width, h: s.doc.height };
+
+      // Draw the region into an offscreen canvas and copy it to the system clipboard.
+      const offscreen = document.createElement("canvas");
+      offscreen.width = region.w;
+      offscreen.height = region.h;
+      offscreen.getContext("2d")!.drawImage(mainCanvas, -region.x, -region.y);
+      await copyToClipboard(offscreen);
+    },
+
+    async cutSelection() {
+      const s = getState();
+      await engine.copySelection();
+      engine.clearRegion(s.selection ?? undefined);
+    },
+
+    clearRegion(region) {
+      if (!mainCtx) return;
+      const s = getState();
+      const r = region ?? { x: 0, y: 0, w: s.doc.width, h: s.doc.height };
+      mainCtx.save();
+      if (!s.doc.bgWasTransparent && s.bg !== "transparent") {
+        // Fill with background colour.
+        mainCtx.fillStyle = s.bg;
+        mainCtx.fillRect(r.x, r.y, r.w, r.h);
+      } else {
+        mainCtx.clearRect(r.x, r.y, r.w, r.h);
+      }
+      mainCtx.restore();
+      pushSnapshot();
+    },
+
+    // ── Canvas sizing
+
+    cropToSelection() {
+      const s = getState();
+      if (!s.selection) return;
+      const { x, y, w, h } = s.selection;
+      applyResize(w, h, (ctx, old) => {
+        ctx.drawImage(old, -x, -y);
+      });
+      clearSelectionInternal();
+    },
+
+    resizeCanvas(w, h, anchor) {
+      const s = getState();
+      const oldW = s.doc.width;
+      const oldH = s.doc.height;
+
+      // Compute offset of existing content based on 9-point anchor.
+      const dx = anchor.includes("right")
+        ? w - oldW
+        : anchor.includes("left")
+          ? 0
+          : Math.round((w - oldW) / 2);
+      const dy = anchor.includes("bottom")
+        ? h - oldH
+        : anchor.includes("top")
+          ? 0
+          : Math.round((h - oldH) / 2);
+
+      applyResize(w, h, (ctx, old) => {
+        if (!s.doc.bgWasTransparent && s.bg !== "transparent") {
+          ctx.fillStyle = s.bg;
+          ctx.fillRect(0, 0, w, h);
+        }
+        ctx.drawImage(old, dx, dy);
+      });
+    },
+
+    scaleImage(w, h) {
+      applyResize(w, h, (ctx, old) => {
+        ctx.drawImage(old, 0, 0, w, h);
+      });
+    },
+
+    trimTransparent() {
+      if (!mainCtx) return;
+      const s = getState();
+      const { width, height } = s.doc;
+      const imageData = mainCtx.getImageData(0, 0, width, height);
+      const { data } = imageData;
+
+      let minX = width;
+      let minY = height;
+      let maxX = -1;
+      let maxY = -1;
+
+      for (let py = 0; py < height; py++) {
+        for (let px = 0; px < width; px++) {
+          const alpha = data[(py * width + px) * 4 + 3];
+          if (alpha > 0) {
+            if (px < minX) minX = px;
+            if (px > maxX) maxX = px;
+            if (py < minY) minY = py;
+            if (py > maxY) maxY = py;
+          }
+        }
+      }
+
+      // Nothing visible, or already at full extent — no-op.
+      if (maxX < 0 || maxY < 0) return;
+      if (minX === 0 && minY === 0 && maxX === width - 1 && maxY === height - 1) return;
+
+      const newW = maxX - minX + 1;
+      const newH = maxY - minY + 1;
+      applyResize(newW, newH, (ctx, old) => {
+        ctx.drawImage(old, -minX, -minY);
+      });
+    },
 
     dispose() {
       window.removeEventListener("keydown", onKeyDown, true);
       window.removeEventListener("keyup", onKeyUp, true);
+      cancelAnimationFrame(rafId);
     },
   };
 

@@ -14,9 +14,12 @@ interface ToolbarProps {
   onOpenFile(): void;
   onExport(): void;
   onClearData(): void;
+  onResize(): void;
+  onScale(): void;
 }
 
 const TOOL_BUTTONS: Array<{ id: ToolId; label: string; title: string }> = [
+  { id: "select",     label: "M",  title: "Select (M)"     },
   { id: "brush",      label: "B",  title: "Brush (B)"      },
   { id: "pencil",     label: "P",  title: "Pencil (P)"     },
   { id: "eraser",     label: "E",  title: "Eraser (E)"     },
@@ -30,7 +33,7 @@ const TOOL_BUTTONS: Array<{ id: ToolId; label: string; title: string }> = [
 
 const SHAPE_TOOLS = new Set<ToolId>(["line", "rect", "ellipse"]);
 
-export function Toolbar({ engine, state, onHelpOpen, onNewDoc, onOpenFile, onExport, onClearData }: ToolbarProps) {
+export function Toolbar({ engine, state, onHelpOpen, onNewDoc, onOpenFile, onExport, onClearData, onResize, onScale }: ToolbarProps) {
 
   return (
     <header className="paint-toolbar">
@@ -54,8 +57,8 @@ export function Toolbar({ engine, state, onHelpOpen, onNewDoc, onOpenFile, onExp
 
       <div className="paint-toolbar__sep" />
 
-      {/* Size — shown for drawing tools, not eyedropper/text */}
-      {state.tool !== "eyedropper" && state.tool !== "text" && (
+      {/* Size — shown for drawing tools, not eyedropper/text/select */}
+      {state.tool !== "eyedropper" && state.tool !== "text" && state.tool !== "select" && (
         <label className="paint-toolbar__label" title={`Size: ${state.size}px`}>
           <span>Size</span>
           <input
@@ -198,8 +201,53 @@ export function Toolbar({ engine, state, onHelpOpen, onNewDoc, onOpenFile, onExp
 
       <div className="paint-toolbar__sep" />
 
+      {/* Canvas operations dropdown */}
+      <details className="paint-toolbar__menu">
+        <summary className="paint-toolbar__btn">Canvas ▾</summary>
+        <div className="paint-toolbar__menu-items">
+          <button
+            type="button"
+            className="paint-toolbar__menu-item"
+            disabled={!state.selection}
+            title={state.selection ? "Crop canvas to selection" : "No selection — draw a marquee first"}
+            onClick={() => {
+              engine.cropToSelection();
+              engine.fitViewport?.();
+            }}
+          >
+            Crop to selection
+          </button>
+          <button
+            type="button"
+            className="paint-toolbar__menu-item"
+            onClick={onResize}
+          >
+            Resize canvas…
+          </button>
+          <button
+            type="button"
+            className="paint-toolbar__menu-item"
+            onClick={onScale}
+          >
+            Scale image…
+          </button>
+          <button
+            type="button"
+            className="paint-toolbar__menu-item"
+            onClick={() => {
+              engine.trimTransparent();
+              engine.fitViewport?.();
+            }}
+          >
+            Trim transparent
+          </button>
+        </div>
+      </details>
+
+      <div className="paint-toolbar__sep" />
+
       {/* Actions */}
-      <button type="button" className="paint-toolbar__btn" onClick={onNewDoc} title="New document">
+      <button type="button" className="paint-toolbar__btn" onClick={onNewDoc} title="New document (Ctrl+N)">
         New
       </button>
       <button type="button" className="paint-toolbar__btn" onClick={onOpenFile} title="Open image file">
