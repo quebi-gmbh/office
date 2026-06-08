@@ -42,8 +42,8 @@ export function HelpModal({ onClose }: HelpModalProps) {
     }
   }, [onClose]);
 
-  // Filter out internal-only shortcuts (redo-alt, cancel shown separately).
-  const visible = SHORTCUTS.filter((s) => s.id !== "redo-y");
+  // Filter out internal-only duplicates (redo-alt, backspace duplicate of delete).
+  const visible = SHORTCUTS.filter((s) => s.id !== "redo-y" && s.id !== "delete-backspace");
 
   return (
     <dialog ref={dialogRef} className="paint-modal" onClick={(e) => {

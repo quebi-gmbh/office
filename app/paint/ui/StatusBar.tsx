@@ -18,10 +18,11 @@ const TOOL_LABELS: Record<string, string> = {
   fill: "Fill",
   eyedropper: "Eyedropper",
   text: "Text",
+  select: "Select",
 };
 
 export function StatusBar({ state }: StatusBarProps) {
-  const { doc, zoom, cursorDoc, tool } = state;
+  const { doc, zoom, cursorDoc, tool, selection } = state;
   const zoomPct = Math.round(zoom * 100);
 
   return (
@@ -39,6 +40,14 @@ export function StatusBar({ state }: StatusBarProps) {
       <span>{zoomPct} %</span>
       <span className="paint-statusbar__sep">|</span>
       <span>{doc.width} × {doc.height}</span>
+      {selection && (
+        <>
+          <span className="paint-statusbar__sep">|</span>
+          <span style={{ color: "var(--color-muted)" }}>
+            sel: {selection.w} × {selection.h}
+          </span>
+        </>
+      )}
     </footer>
   );
 }

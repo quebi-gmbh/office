@@ -637,6 +637,42 @@ p[data-footnote-body]::before {
 .paint-toolbar__btn:hover:not(:disabled) { border-color: var(--color-accent); }
 .paint-toolbar__btn:disabled { opacity: 0.4; cursor: default; }
 
+/* Canvas dropdown menu */
+.paint-toolbar__menu {
+  position: relative;
+}
+.paint-toolbar__menu > summary {
+  list-style: none;
+  cursor: pointer;
+}
+.paint-toolbar__menu > summary::-webkit-details-marker { display: none; }
+.paint-toolbar__menu-items {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 100;
+  min-width: 160px;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  padding: 0.25rem 0;
+  display: flex;
+  flex-direction: column;
+}
+.paint-toolbar__menu-item {
+  padding: 0.35rem 0.8rem;
+  border: none;
+  background: none;
+  color: var(--color-fg);
+  font-size: 0.82rem;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.paint-toolbar__menu-item:hover:not(:disabled) { background: var(--color-bg); }
+.paint-toolbar__menu-item:disabled { opacity: 0.4; cursor: default; }
+
 /* ─── Canvas outer / wrap ─────────────────────────────────────────────────── */
 
 /* Scrollable container that holds the zoomable canvas wrap. */

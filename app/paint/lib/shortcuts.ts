@@ -62,6 +62,7 @@ export const SHORTCUTS: Shortcut[] = [
   toolShortcut("KeyG", "fill",       "Fill",        "G"),
   toolShortcut("KeyI", "eyedropper", "Eyedropper",  "I"),
   toolShortcut("KeyT", "text",       "Text",        "T"),
+  toolShortcut("KeyM", "select",     "Select (marquee)", "M"),
 
   // ── Brush size
   {
@@ -100,6 +101,56 @@ export const SHORTCUTS: Shortcut[] = [
   },
 
   // ── Edit
+  {
+    id: "copy",
+    keys: "Mod+C",
+    label: "Copy selection (or whole canvas)",
+    group: "edit",
+    run(engine, ev) {
+      ev.preventDefault();
+      engine.copySelection();
+    },
+  },
+  {
+    id: "cut",
+    keys: "Mod+X",
+    label: "Cut selection (or whole canvas)",
+    group: "edit",
+    run(engine, ev) {
+      ev.preventDefault();
+      engine.cutSelection();
+    },
+  },
+  {
+    id: "select-all",
+    keys: "Mod+A",
+    label: "Select all",
+    group: "edit",
+    run(engine, ev) {
+      ev.preventDefault();
+      engine.selectAll();
+    },
+  },
+  {
+    id: "delete",
+    keys: "Delete",
+    label: "Clear selection (or canvas)",
+    group: "edit",
+    run(engine) {
+      const state = engine.store.getSnapshot();
+      engine.clearRegion(state.selection ?? undefined);
+    },
+  },
+  {
+    id: "delete-backspace",
+    keys: "Backspace",
+    label: "Clear selection (or canvas)",
+    group: "edit",
+    run(engine) {
+      const state = engine.store.getSnapshot();
+      engine.clearRegion(state.selection ?? undefined);
+    },
+  },
   {
     id: "undo",
     keys: "Mod+Z",
@@ -155,6 +206,16 @@ export const SHORTCUTS: Shortcut[] = [
 
   // ── File
   {
+    id: "new-document",
+    keys: "Mod+N",
+    label: "New document…",
+    group: "file",
+    run(engine, ev) {
+      ev.preventDefault();
+      engine.openNewDialog?.();
+    },
+  },
+  {
     id: "paste-image",
     keys: "Mod+V",
     label: "Paste image from clipboard",
@@ -194,15 +255,16 @@ export const SHORTCUTS: Shortcut[] = [
     },
   },
 
-  // ── Escape — cancel active drag / text overlay
+  // ── Escape — cancel active drag / text overlay / clear selection
   {
     id: "cancel",
     keys: "Escape",
-    label: "Cancel / close",
+    label: "Cancel / deselect",
     group: "edit",
     run(engine) {
       engine.cancelDrag();
       engine.cancelText();
+      engine.clearSelection();
     },
   },
 ];

@@ -13,6 +13,7 @@ import { HelpModal } from "~/paint/ui/HelpModal";
 import { NewDocDialog } from "~/paint/ui/NewDocDialog";
 import { ImportDialog } from "~/paint/ui/ImportDialog";
 import { ExportDialog } from "~/paint/ui/ExportDialog";
+import { CanvasSizeDialog } from "~/paint/ui/CanvasSizeDialog";
 import { RestoreBanner } from "~/paint/ui/RestoreBanner";
 import {
   fileToImageBitmap,
@@ -34,6 +35,8 @@ export function PaintApp() {
   const { helpOpen, setHelpOpen } = useShortcuts(engine);
   const [newDocOpen, setNewDocOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [resizeOpen, setResizeOpen] = useState(false);
+  const [scaleOpen, setScaleOpen] = useState(false);
   const [pendingBitmap, setPendingBitmap] = useState<ImageBitmap | null>(null);
   const [restoreSession, setRestoreSession] = useState<string | null>(null);
 
@@ -67,8 +70,6 @@ export function PaintApp() {
   }, [engine, viewport]);
 
   // Fit the canvas to the viewport once on mount only.
-  // Kept in a separate effect with [] deps so calling setState inside
-  // fitViewport cannot trigger this effect again.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { engine.fitViewport?.(); }, []);
 
@@ -82,6 +83,12 @@ export function PaintApp() {
       const blob = await canvasToBlob(canvas, "image/png", 1);
       downloadBlob(blob, defaultFilename("image/png"));
     };
+  }, [engine]);
+
+  // ─── New-doc dialog wiring ─────────────────────────────────────────────────
+
+  useEffect(() => {
+    engine.openNewDialog = () => setNewDocOpen(true);
   }, [engine]);
 
   // ─── Autosave ─────────────────────────────────────────────────────────────
@@ -164,7 +171,7 @@ export function PaintApp() {
     if (!files || files.length === 0) return;
     e.target.value = ""; // reset so same file can be re-picked
     const bitmap = await fileToImageBitmap(files[0]);
-    setPendingBitmap(bitmap);
+    handleIncomingBitmap(bitmap);
   }
 
   // ─── Import: drag-drop ────────────────────────────────────────────────────
@@ -183,7 +190,7 @@ export function PaintApp() {
         const file = item.getAsFile();
         if (file?.type.startsWith("image/")) {
           const bitmap = await fileToImageBitmap(file);
-          setPendingBitmap(bitmap);
+          handleIncomingBitmap(bitmap);
           return;
         }
       }
@@ -199,37 +206,62 @@ export function PaintApp() {
         for (const item of e.clipboardData.items) {
           const bitmap = await dataTransferItemToImageBitmap(item);
           if (bitmap) {
-            setPendingBitmap(bitmap);
+            handleIncomingBitmap(bitmap);
             return;
           }
         }
       }
       // Fallback: clipboard API (Chrome requires permission; Firefox may be disabled).
       const bitmap = await clipboardToImageBitmap();
-      if (bitmap) setPendingBitmap(bitmap);
+      if (bitmap) handleIncomingBitmap(bitmap);
     }
 
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ─── Import placement ─────────────────────────────────────────────────────
+  // ─── Smart import routing ─────────────────────────────────────────────────
+  //
+  // If the document is untouched (blank / no undo history), silently replace it
+  // with the incoming image at the image's native size — no dialog.
+  // If the document has content, show the fit/centre/replace placement dialog.
+
+  function handleIncomingBitmap(bitmap: ImageBitmap) {
+    const s = engine.store.getSnapshot();
+    if (!s.canUndo) {
+      // Blank canvas — auto-replace at the image's native dimensions.
+      replaceWithBitmap(bitmap);
+    } else {
+      // Existing artwork — ask the user how to place it.
+      setPendingBitmap(bitmap);
+    }
+  }
+
+  /** Resize the canvas to match the bitmap and draw it. No placement dialog. */
+  function replaceWithBitmap(bitmap: ImageBitmap) {
+    const canvas = document.querySelector<HTMLCanvasElement>(".paint-canvas-main");
+    if (!canvas) return;
+    const s = engine.store.getSnapshot();
+    engine.newDocument(bitmap.width, bitmap.height, s.doc.bgWasTransparent ? "transparent" : s.bg);
+    const freshCtx = canvas.getContext("2d")!;
+    freshCtx.drawImage(bitmap, 0, 0);
+    engine.store.setState((st) => ({ ...st, canUndo: false, canRedo: false }));
+    engine.snapshotNow();
+    rotateSession();
+    engine.fitViewport?.();
+  }
+
+  // ─── Import placement (when the dialog is shown) ──────────────────────────
 
   function applyImport(bitmap: ImageBitmap, mode: PlacementMode) {
     const canvas = document.querySelector<HTMLCanvasElement>(".paint-canvas-main");
-    const previewCanvas = document.querySelector<HTMLCanvasElement>(".paint-canvas-preview");
     if (!canvas) return;
 
     const ctx = canvas.getContext("2d")!;
     const s = engine.store.getSnapshot();
 
     if (mode === "replace") {
-      // Resize canvases.
-      engine.newDocument(bitmap.width, bitmap.height, s.doc.bgWasTransparent ? "transparent" : s.bg);
-      // After newDocument the canvas is re-initialised; draw bitmap.
-      const freshCtx = canvas.getContext("2d")!;
-      freshCtx.drawImage(bitmap, 0, 0);
-      engine.store.setState((st) => ({ ...st, canUndo: false, canRedo: false }));
+      replaceWithBitmap(bitmap);
     } else if (mode === "fit") {
       const scale = Math.min(s.doc.width / bitmap.width, s.doc.height / bitmap.height);
       const w = bitmap.width * scale;
@@ -237,17 +269,18 @@ export function PaintApp() {
       const x = (s.doc.width - w) / 2;
       const y = (s.doc.height - h) / 2;
       ctx.drawImage(bitmap, x, y, w, h);
+      engine.snapshotNow();
+      rotateSession();
     } else {
       // centre
       const x = (s.doc.width - bitmap.width) / 2;
       const y = (s.doc.height - bitmap.height) / 2;
       ctx.drawImage(bitmap, x, y);
+      engine.snapshotNow();
+      rotateSession();
     }
 
-    // Snapshot so the import is undoable.
-    engine.snapshotNow();
     setPendingBitmap(null);
-    rotateSession(); // import is a new "session"
   }
 
   // ─── Restore ──────────────────────────────────────────────────────────────
@@ -297,6 +330,8 @@ export function PaintApp() {
         onOpenFile={() => fileInputRef.current?.click()}
         onExport={() => setExportOpen(true)}
         onClearData={async () => { await clearAllAutosaveData(); rotateSession(); }}
+        onResize={() => setResizeOpen(true)}
+        onScale={() => setScaleOpen(true)}
       />
       {/* Hidden file input */}
       <input
@@ -355,6 +390,22 @@ export function PaintApp() {
           bitmap={pendingBitmap}
           onConfirm={(mode) => applyImport(pendingBitmap, mode)}
           onClose={() => setPendingBitmap(null)}
+        />
+      )}
+      {resizeOpen && (
+        <CanvasSizeDialog
+          mode="resize"
+          engine={engine}
+          state={state}
+          onClose={() => setResizeOpen(false)}
+        />
+      )}
+      {scaleOpen && (
+        <CanvasSizeDialog
+          mode="scale"
+          engine={engine}
+          state={state}
+          onClose={() => setScaleOpen(false)}
         />
       )}
     </section>

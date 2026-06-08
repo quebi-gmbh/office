@@ -11,7 +11,14 @@ export type ToolId =
   | "ellipse"
   | "fill"
   | "eyedropper"
-  | "text";
+  | "text"
+  | "select";
+
+/** 9-point anchor for canvas resize (where existing pixels land in the new canvas). */
+export type AnchorPoint =
+  | "top-left"    | "top"    | "top-right"
+  | "left"        | "center" | "right"
+  | "bottom-left" | "bottom" | "bottom-right";
 
 export interface BrushOptions {
   smoothing: number;    // 0–1
@@ -32,6 +39,14 @@ export interface DocInfo {
   width: number;
   height: number;
   bgWasTransparent: boolean;
+}
+
+/** A committed rectangular selection in document pixel coordinates (normalised, clamped). */
+export interface SelectionRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
 }
 
 /** Mutable engine state read by React components via useSyncExternalStore. */
@@ -55,6 +70,8 @@ export interface EngineState {
   autosaveAvailable: boolean;
   /** When the text tool requests an overlay, this holds the click position in doc space. */
   textOverlay: { x: number; y: number; fontSize: number; fontFamily: string } | null;
+  /** Currently committed marquee selection, or null if none. Lives outside history. */
+  selection: SelectionRect | null;
 }
 
 /** Keyboard modifier state, kept in sync by the engine. */
@@ -106,6 +123,8 @@ export interface PaintContext {
   modifiers: Modifiers;
   setFg(c: string): void;
   setBg(c: string): void;
+  setSelection(rect: SelectionRect): void;
+  clearSelection(): void;
 }
 
 /** Interface every tool module must satisfy. */
