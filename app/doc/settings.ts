@@ -21,7 +21,6 @@ export type PageWidth = "narrow" | "comfortable" | "wide" | "full";
 export type FontFamily = "serif" | "sans" | "mono";
 export type AutosaveMs = 500 | 1000 | 5000;
 export type OutlineMode = "auto" | "always" | "off";
-export type ThemeMode = "auto" | "light" | "dark";
 export type ListStyle =
   | "decimal"
   | "lower-alpha"
@@ -61,9 +60,6 @@ export type DocSettings = {
     /** Auto-snapshot interval in minutes (0 = off). */
     versionIntervalMin: number;
   };
-  theme: {
-    mode: ThemeMode;
-  };
 };
 
 export const defaults: DocSettings = {
@@ -89,9 +85,6 @@ export const defaults: DocSettings = {
     typewriterMode: false,
     targetWords: 0,
     versionIntervalMin: 5,
-  },
-  theme: {
-    mode: "auto",
   },
 };
 

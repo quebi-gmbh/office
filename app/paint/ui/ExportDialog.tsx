@@ -145,7 +145,7 @@ export function ExportDialog({ canvas, onClose }: ExportDialogProps) {
             <button
               type="button"
               className="paint-toolbar__btn"
-              style={{ borderColor: "var(--accent)", color: "var(--accent)" }}
+              style={{ borderColor: "var(--color-accent)", color: "var(--color-accent)" }}
               onClick={doExport}
             >
               ↓ Download

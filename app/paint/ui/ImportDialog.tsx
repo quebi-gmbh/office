@@ -55,7 +55,7 @@ export function ImportDialog({ bitmap, onConfirm, onClose }: ImportDialogProps) 
           <button type="button" className="paint-modal__close" onClick={onClose} aria-label="Close">✕</button>
         </div>
         <div className="paint-modal__body" style={{ flexDirection: "column", gap: "0.75rem" }}>
-          <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--muted)" }}>
+          <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--color-muted)" }}>
             Image size: {bitmap.width} × {bitmap.height}
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
@@ -81,7 +81,7 @@ export function ImportDialog({ bitmap, onConfirm, onClose }: ImportDialogProps) 
             <button
               type="button"
               className="paint-toolbar__btn"
-              style={{ borderColor: "var(--accent)", color: "var(--accent)" }}
+              style={{ borderColor: "var(--color-accent)", color: "var(--color-accent)" }}
               onClick={confirm}
             >
               Place

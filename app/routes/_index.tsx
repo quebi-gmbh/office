@@ -52,32 +52,52 @@ export default function Index() {
   return (
     <section>
       {/* Hero */}
-      <header className="mb-10">
-        <h1 className="mb-2 text-3xl font-bold tracking-tight">
-          office.quebi.de
-        </h1>
-        <p className="mb-3 text-lg font-medium tracking-tight">
-          Small tools that just work, right in your browser.
-        </p>
-        <p className="mb-4 max-w-[60ch] text-sm text-muted">
-          Missing Paint? Don't want to install a 200&thinsp;MB app to crop a
-          screenshot or scribble a note? These tools live in a browser tab. No
-          signup, no backend, no telemetry — just open source utilities, hosted
-          statically on GitHub Pages.
-        </p>
-        <ul className="mb-1 flex list-none flex-wrap gap-1.5 p-0">
-          {chips.map((chip) => (
-            <li
-              key={chip}
-              className="rounded-full border border-border bg-card px-2.5 py-0.5 text-xs text-muted"
-            >
-              {chip}
-            </li>
-          ))}
-        </ul>
-        <p className="text-xs text-muted opacity-70">
-          *the CDN sees your IP, nobody else.
-        </p>
+      <header className="relative mb-16 overflow-hidden rounded-2xl px-8 py-20 text-center">
+        {/* Decorative: teal glow circle */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -top-32 left-1/2 z-0 h-[380px] w-[380px] -translate-x-1/2 rounded-full bg-quebi-brand/[0.15] blur-3xl"
+        />
+        {/* Decorative: purple accent */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute bottom-0 right-8 z-0 h-[220px] w-[220px] rounded-full bg-purple-400/[0.12] blur-3xl"
+        />
+        {/* Decorative: grid overlay */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 z-0 bg-quebi-grid"
+        />
+
+        {/* Content */}
+        <div className="relative z-10">
+          <span className="quebi-eyebrow mb-4 block">quebi GmbH</span>
+          <h1 className="mb-4 text-5xl font-bold tracking-tight text-white sm:text-6xl md:text-7xl">
+            office.quebi.de
+          </h1>
+          <p className="mb-4 text-lg text-muted">
+            Small tools that just work, right in your browser.
+          </p>
+          <p className="mx-auto mb-6 max-w-[60ch] text-sm text-muted">
+            Missing Paint? Don't want to install a 200&thinsp;MB app to crop a
+            screenshot or scribble a note? These tools live in a browser tab. No
+            signup, no backend, no telemetry — just open source utilities, hosted
+            statically on GitHub Pages.
+          </p>
+          <ul className="mb-1 flex list-none flex-wrap justify-center gap-1.5 p-0">
+            {chips.map((chip) => (
+              <li
+                key={chip}
+                className="rounded-full border border-accent/20 bg-accent/[0.07] px-2.5 py-0.5 text-xs text-accent"
+              >
+                {chip}
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs text-muted opacity-70">
+            *the CDN sees your IP, nobody else.
+          </p>
+        </div>
       </header>
 
       {/* Tools grid */}
@@ -86,12 +106,12 @@ export default function Index() {
           <li key={t.to}>
             <Link
               to={t.to}
-              className="group relative block rounded-xl border border-border bg-card p-5 transition duration-150 hover:-translate-y-0.5 hover:border-accent hover:shadow-sm"
+              className="group relative block rounded-xl border border-border bg-card p-5 transition duration-300 hover:-translate-y-0.5 hover:border-accent/30 hover:shadow-[0_0_24px_rgba(45,212,168,0.18)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
             >
               <span
                 className={`absolute right-3 top-3 rounded-full border px-2 py-0.5 text-[0.65rem] font-medium tracking-wider ${
                   t.status === "live"
-                    ? "border-live/30 uppercase text-live"
+                    ? "border-accent/30 uppercase text-accent"
                     : "border-muted/30 italic text-muted"
                 }`}
               >
@@ -116,7 +136,7 @@ export default function Index() {
           <li>
             <p className="text-sm text-muted">
               <strong className="font-semibold text-fg">
-                🔒 Your data stays put
+                Your data stays put
               </strong>{" "}
               — files never leave your device.
             </p>
@@ -124,14 +144,14 @@ export default function Index() {
           <li>
             <p className="text-sm text-muted">
               <strong className="font-semibold text-fg">
-                ⚡ No install, no account, no waiting
+                No install, no account, no waiting
               </strong>{" "}
               — a URL is the whole UX.
             </p>
           </li>
           <li>
             <p className="text-sm text-muted">
-              <strong className="font-semibold text-fg">🛠 Open source</strong>{" "}
+              <strong className="font-semibold text-fg">Open source</strong>{" "}
               — every line on GitHub, fork it / host it / PR it.
             </p>
           </li>

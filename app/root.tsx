@@ -90,6 +90,7 @@ export default function Root() {
           href="https://github.com/quebi-gmbh/office"
           target="_blank"
           rel="noreferrer"
+          className="hover:text-white"
         >
           source on github
         </a>

@@ -49,13 +49,6 @@ export function applyDocSettings(
     );
   }
 
-  // Theme: force or restore system default
-  if (settings.theme.mode === "auto") {
-    document.documentElement.removeAttribute("data-theme");
-  } else {
-    document.documentElement.setAttribute("data-theme", settings.theme.mode);
-  }
-
   // Custom CSS — inject/update a <style> scoped to .ProseMirror
   const styleId = "doc-custom-css";
   let styleEl = document.getElementById(styleId) as HTMLStyleElement | null;
@@ -76,7 +69,6 @@ export function applyDocSettings(
  * Clean up any DOM side effects when navigating away from /docs.
  */
 export function cleanupDocSettings(): void {
-  document.documentElement.removeAttribute("data-theme");
   document.getElementById("doc-custom-css")?.remove();
   document.body.removeAttribute("data-focus-mode");
 }

@@ -2,6 +2,28 @@
  * Paint toolbar — tool picker, size/options, colour controls, undo/redo, actions.
  * Expanded further in sub-tasks #28 (shortcuts) and #30 (full colour system).
  */
+import type { ReactNode } from "react";
+import {
+  ChevronDown,
+  Circle,
+  CircleHelp,
+  Download,
+  Eraser,
+  FilePlus,
+  FolderOpen,
+  Layers,
+  Minus,
+  MousePointer2,
+  PaintBucket,
+  Paintbrush,
+  Pencil,
+  Pipette,
+  Redo2,
+  Square,
+  Trash2,
+  Type,
+  Undo2,
+} from "lucide-react";
 import type { Engine } from "~/paint/engine";
 import type { EngineState, ToolId } from "~/paint/lib/types";
 import { ColourSwatches } from "~/paint/ui/ColourSwatches";
@@ -18,17 +40,17 @@ interface ToolbarProps {
   onScale(): void;
 }
 
-const TOOL_BUTTONS: Array<{ id: ToolId; label: string; title: string }> = [
-  { id: "select",     label: "M",  title: "Select (M)"     },
-  { id: "brush",      label: "B",  title: "Brush (B)"      },
-  { id: "pencil",     label: "P",  title: "Pencil (P)"     },
-  { id: "eraser",     label: "E",  title: "Eraser (E)"     },
-  { id: "line",       label: "L",  title: "Line (L)"       },
-  { id: "rect",       label: "R",  title: "Rectangle (R)"  },
-  { id: "ellipse",    label: "O",  title: "Ellipse (O)"    },
-  { id: "fill",       label: "G",  title: "Fill (G)"       },
-  { id: "eyedropper", label: "I",  title: "Eyedropper (I)" },
-  { id: "text",       label: "T",  title: "Text (T)"       },
+const TOOL_BUTTONS: Array<{ id: ToolId; icon: ReactNode; title: string }> = [
+  { id: "select",     icon: <MousePointer2 size={15} aria-hidden />, title: "Select (M)"     },
+  { id: "brush",      icon: <Paintbrush    size={15} aria-hidden />, title: "Brush (B)"      },
+  { id: "pencil",     icon: <Pencil        size={15} aria-hidden />, title: "Pencil (P)"     },
+  { id: "eraser",     icon: <Eraser        size={15} aria-hidden />, title: "Eraser (E)"     },
+  { id: "line",       icon: <Minus         size={15} aria-hidden />, title: "Line (L)"       },
+  { id: "rect",       icon: <Square        size={15} aria-hidden />, title: "Rectangle (R)"  },
+  { id: "ellipse",    icon: <Circle        size={15} aria-hidden />, title: "Ellipse (O)"    },
+  { id: "fill",       icon: <PaintBucket   size={15} aria-hidden />, title: "Fill (G)"       },
+  { id: "eyedropper", icon: <Pipette       size={15} aria-hidden />, title: "Eyedropper (I)" },
+  { id: "text",       icon: <Type          size={15} aria-hidden />, title: "Text (T)"       },
 ];
 
 const SHAPE_TOOLS = new Set<ToolId>(["line", "rect", "ellipse"]);
@@ -41,7 +63,7 @@ export function Toolbar({ engine, state, onHelpOpen, onNewDoc, onOpenFile, onExp
 
       {/* Tool selector */}
       <div className="paint-toolbar__tools" role="toolbar" aria-label="Drawing tools">
-        {TOOL_BUTTONS.map(({ id, label, title }) => (
+        {TOOL_BUTTONS.map(({ id, icon, title }) => (
           <button
             key={id}
             type="button"
@@ -50,7 +72,7 @@ export function Toolbar({ engine, state, onHelpOpen, onNewDoc, onOpenFile, onExp
             onClick={() => engine.setTool(id)}
             aria-pressed={state.tool === id}
           >
-            {label}
+            {icon}
           </button>
         ))}
       </div>
@@ -187,7 +209,7 @@ export function Toolbar({ engine, state, onHelpOpen, onNewDoc, onOpenFile, onExp
         onClick={() => engine.undo()}
         className="paint-toolbar__btn"
       >
-        ↩ Undo
+        <Undo2 size={14} aria-hidden /> Undo
       </button>
       <button
         type="button"
@@ -196,14 +218,16 @@ export function Toolbar({ engine, state, onHelpOpen, onNewDoc, onOpenFile, onExp
         onClick={() => engine.redo()}
         className="paint-toolbar__btn"
       >
-        ↪ Redo
+        <Redo2 size={14} aria-hidden /> Redo
       </button>
 
       <div className="paint-toolbar__sep" />
 
       {/* Canvas operations dropdown */}
       <details className="paint-toolbar__menu">
-        <summary className="paint-toolbar__btn">Canvas ▾</summary>
+        <summary className="paint-toolbar__btn">
+          <Layers size={14} aria-hidden /> Canvas <ChevronDown size={12} aria-hidden />
+        </summary>
         <div className="paint-toolbar__menu-items">
           <button
             type="button"
@@ -246,24 +270,24 @@ export function Toolbar({ engine, state, onHelpOpen, onNewDoc, onOpenFile, onExp
 
       <div className="paint-toolbar__sep" />
 
-      {/* Actions */}
+      {/* File actions */}
       <button type="button" className="paint-toolbar__btn" onClick={onNewDoc} title="New document (Ctrl+N)">
-        New
+        <FilePlus size={14} aria-hidden /> New
       </button>
       <button type="button" className="paint-toolbar__btn" onClick={onOpenFile} title="Open image file">
-        Open
+        <FolderOpen size={14} aria-hidden /> Open
       </button>
       <button type="button" className="paint-toolbar__btn" onClick={onExport} title="Export (Ctrl+S)">
-        ↓ Export
+        <Download size={14} aria-hidden /> Export
       </button>
       <button
         type="button"
         className="paint-toolbar__btn"
         onClick={onClearData}
         title="Clear saved session data"
-        style={{ color: "var(--muted)" }}
+        style={{ color: "var(--color-muted)" }}
       >
-        Clear data
+        <Trash2 size={14} aria-hidden /> Clear
       </button>
 
       <div className="paint-toolbar__sep" />
@@ -274,7 +298,7 @@ export function Toolbar({ engine, state, onHelpOpen, onNewDoc, onOpenFile, onExp
         title="Keyboard shortcuts (?)"
         onClick={onHelpOpen}
       >
-        ?
+        <CircleHelp size={14} aria-hidden />
       </button>
     </header>
   );
