@@ -1,21 +1,34 @@
 import type { Editor } from "@tiptap/react";
 import {
+  AlignCenter,
+  AlignJustify,
+  AlignLeft,
+  AlignRight,
   Bold,
   Code,
   Italic,
   Link,
   List,
   ListOrdered,
+  ListTodo,
   Quote,
   Redo,
   RemoveFormatting,
+  Settings,
   Strikethrough,
+  Subscript,
+  Superscript,
   Underline,
   Undo,
 } from "lucide-react";
+import { SwatchPicker } from "./toolbar/SwatchPicker";
+import { TableControls } from "./toolbar/TableControls";
+import { ImageButton } from "./toolbar/ImageButton";
+import { CodeBlockButton } from "./toolbar/CodeBlockButton";
 
 interface Props {
   editor: Editor;
+  onSettingsClick?: () => void;
 }
 
 /** Base button class — mirrors the established app button style. */
@@ -25,7 +38,7 @@ const BTN =
 /** Additional classes when a mark/node is active. */
 const ACTIVE = "border-accent text-accent bg-card";
 
-function ToolBtn({
+export function ToolBtn({
   onClick,
   active = false,
   disabled = false,
@@ -57,7 +70,7 @@ function ToolBtn({
   );
 }
 
-function Divider() {
+export function Divider() {
   return <span className="mx-0.5 h-5 w-px self-center bg-border" aria-hidden />;
 }
 
@@ -68,7 +81,7 @@ function promptLink(currentUrl: string): string | undefined {
   return url.trim();
 }
 
-export function Toolbar({ editor }: Props) {
+export function Toolbar({ editor, onSettingsClick }: Props) {
   const headingLevel = [1, 2, 3, 4, 5, 6].find((l) =>
     editor.isActive("heading", { level: l }),
   );
@@ -100,6 +113,12 @@ export function Toolbar({ editor }: Props) {
     }
   }
 
+  // Active text color / highlight color for the swatch pickers
+  const activeTextColor =
+    (editor.getAttributes("textStyle").color as string | undefined) ?? null;
+  const activeHighlightColor =
+    (editor.getAttributes("highlight").color as string | undefined) ?? null;
+
   return (
     <div
       role="toolbar"
@@ -124,7 +143,7 @@ export function Toolbar({ editor }: Props) {
 
       <Divider />
 
-      {/* Headings dropdown */}
+      {/* Block type */}
       <select
         value={headingValue}
         onChange={handleHeadingChange}
@@ -174,6 +193,20 @@ export function Toolbar({ editor }: Props) {
         <Strikethrough size={13} />
       </ToolBtn>
       <ToolBtn
+        onClick={() => editor.chain().focus().toggleSuperscript().run()}
+        active={editor.isActive("superscript")}
+        title="Superscript"
+      >
+        <Superscript size={13} />
+      </ToolBtn>
+      <ToolBtn
+        onClick={() => editor.chain().focus().toggleSubscript().run()}
+        active={editor.isActive("subscript")}
+        title="Subscript"
+      >
+        <Subscript size={13} />
+      </ToolBtn>
+      <ToolBtn
         onClick={() => editor.chain().focus().toggleCode().run()}
         active={editor.isActive("code")}
         title="Inline code"
@@ -183,7 +216,78 @@ export function Toolbar({ editor }: Props) {
 
       <Divider />
 
-      {/* Structural */}
+      {/* Text color */}
+      <SwatchPicker
+        label={
+          <span
+            className="text-xs font-bold"
+            style={{ color: activeTextColor ?? "currentColor" }}
+          >
+            A
+          </span>
+        }
+        title="Text color"
+        activeColor={activeTextColor}
+        onPick={(color) => editor.chain().focus().setColor(color).run()}
+        onClear={() => editor.chain().focus().unsetColor().run()}
+      />
+
+      {/* Highlight */}
+      <SwatchPicker
+        label={
+          <span
+            className="text-xs font-bold"
+            style={{
+              backgroundColor: activeHighlightColor ?? "transparent",
+              padding: "0 2px",
+            }}
+          >
+            H
+          </span>
+        }
+        title="Highlight color"
+        activeColor={activeHighlightColor}
+        onPick={(color) =>
+          editor.chain().focus().toggleHighlight({ color }).run()
+        }
+        onClear={() => editor.chain().focus().unsetHighlight().run()}
+      />
+
+      <Divider />
+
+      {/* Text alignment */}
+      <ToolBtn
+        onClick={() => editor.chain().focus().setTextAlign("left").run()}
+        active={editor.isActive({ textAlign: "left" })}
+        title="Align left"
+      >
+        <AlignLeft size={13} />
+      </ToolBtn>
+      <ToolBtn
+        onClick={() => editor.chain().focus().setTextAlign("center").run()}
+        active={editor.isActive({ textAlign: "center" })}
+        title="Align center"
+      >
+        <AlignCenter size={13} />
+      </ToolBtn>
+      <ToolBtn
+        onClick={() => editor.chain().focus().setTextAlign("right").run()}
+        active={editor.isActive({ textAlign: "right" })}
+        title="Align right"
+      >
+        <AlignRight size={13} />
+      </ToolBtn>
+      <ToolBtn
+        onClick={() => editor.chain().focus().setTextAlign("justify").run()}
+        active={editor.isActive({ textAlign: "justify" })}
+        title="Justify"
+      >
+        <AlignJustify size={13} />
+      </ToolBtn>
+
+      <Divider />
+
+      {/* Lists */}
       <ToolBtn
         onClick={() => editor.chain().focus().toggleBulletList().run()}
         active={editor.isActive("bulletList")}
@@ -197,6 +301,13 @@ export function Toolbar({ editor }: Props) {
         title="Numbered list"
       >
         <ListOrdered size={13} />
+      </ToolBtn>
+      <ToolBtn
+        onClick={() => editor.chain().focus().toggleTaskList().run()}
+        active={editor.isActive("taskList")}
+        title="Task list"
+      >
+        <ListTodo size={13} />
       </ToolBtn>
       <ToolBtn
         onClick={() => editor.chain().focus().toggleBlockquote().run()}
@@ -219,6 +330,17 @@ export function Toolbar({ editor }: Props) {
 
       <Divider />
 
+      {/* Table */}
+      <TableControls editor={editor} />
+
+      {/* Image */}
+      <ImageButton editor={editor} />
+
+      {/* Code block */}
+      <CodeBlockButton editor={editor} />
+
+      <Divider />
+
       {/* Clear formatting */}
       <ToolBtn
         onClick={() =>
@@ -228,6 +350,17 @@ export function Toolbar({ editor }: Props) {
       >
         <RemoveFormatting size={13} />
       </ToolBtn>
+
+      {/* Spacer + Settings — pushed to right */}
+      {onSettingsClick && (
+        <>
+          <span className="ml-auto" aria-hidden />
+          <Divider />
+          <ToolBtn onClick={onSettingsClick} title="Settings (Ctrl+,)">
+            <Settings size={13} />
+          </ToolBtn>
+        </>
+      )}
     </div>
   );
 }
