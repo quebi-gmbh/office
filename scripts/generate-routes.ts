@@ -89,7 +89,7 @@ const eagerImports = eagerRoutes
 const lazyImports = lazyRoutes
   .map(
     (r) =>
-      `const ${r.importName} = lazy(() => import("${r.importPath}"));`,
+      `const ${r.importName} = lazyWithRetry(() => import("${r.importPath}"));`,
   )
   .join("\n");
 const entries = routes
@@ -100,7 +100,7 @@ const entries = routes
   )
   .join("\n");
 
-const body = `${header}import { lazy } from "react";
+const body = `${header}import { lazyWithRetry } from "./lib/lazy-with-retry";
 import type { RouteObject } from "react-router";
 ${eagerImports}
 ${lazyImports}
