@@ -37,6 +37,8 @@ export interface TableDoc {
   colTypes: (ColumnType | null)[];
   /** Per-column width in px; null = default width. */
   colWidths: (number | null)[];
+  /** Whether row 0 holds column labels (used by type inference + export). */
+  hasHeader?: boolean;
 }
 
 export interface CellPos {
@@ -70,7 +72,11 @@ export function createEmptyDoc(
 }
 
 /** Build a doc from a row-major 2-D array of strings (e.g. a parsed CSV). */
-export function docFromRows(rows: string[][], name = "Untitled"): TableDoc {
+export function docFromRows(
+  rows: string[][],
+  name = "Untitled",
+  hasHeader = false,
+): TableDoc {
   const nRows = rows.length;
   const nCols = rows.reduce((m, r) => Math.max(m, r.length), 0);
   const cols: string[][] = Array.from({ length: nCols }, () => new Array(nRows));
@@ -86,6 +92,7 @@ export function docFromRows(rows: string[][], name = "Untitled"): TableDoc {
     cols,
     colTypes: Array.from({ length: Math.max(nCols, 1) }, () => null),
     colWidths: Array.from({ length: Math.max(nCols, 1) }, () => null),
+    hasHeader,
   };
 }
 
