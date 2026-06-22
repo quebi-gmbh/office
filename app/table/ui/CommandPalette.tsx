@@ -15,7 +15,24 @@ export interface TableCommandCtx {
   importFile: () => void;
   insertRow: () => void;
   insertCol: () => void;
+  dataAction: (a: string) => void;
 }
+
+const DATA_OPS: { id: string; title: string }[] = [
+  { id: "dedupe", title: "Deduplicate rows" },
+  { id: "split", title: "Split column" },
+  { id: "merge", title: "Merge columns" },
+  { id: "fillDown", title: "Fill down" },
+  { id: "trim", title: "Trim whitespace" },
+  { id: "upper", title: "Uppercase" },
+  { id: "lower", title: "Lowercase" },
+  { id: "title", title: "Title case" },
+  { id: "regex", title: "Regex replace" },
+  { id: "flashFill", title: "Flash fill" },
+  { id: "group", title: "Group + aggregate" },
+  { id: "transpose", title: "Transpose" },
+  { id: "unpivot", title: "Unpivot / melt" },
+];
 
 interface Cmd {
   id: string;
@@ -35,6 +52,9 @@ function buildCommands(): Cmd[] {
     { id: "insert-col", title: "Insert column", group: "Data", run: (c) => c.insertCol() },
     { id: "settings", title: "Open settings", group: "Settings", run: (c) => c.openSettings() },
   ];
+  for (const op of DATA_OPS) {
+    cmds.push({ id: `data-${op.id}`, title: op.title, group: "Transform", run: (c) => c.dataAction(op.id) });
+  }
   for (const t of EXPORT_TARGETS) {
     cmds.push({ id: `dl-${t.id}`, title: `Download as ${t.label}`, group: "Download as", run: (c) => c.exportTo(t.id, "download") });
     if (!t.binary) cmds.push({ id: `cp-${t.id}`, title: `Copy as ${t.label}`, group: "Copy as", run: (c) => c.exportTo(t.id, "copy") });
