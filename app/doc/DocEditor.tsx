@@ -33,7 +33,10 @@ import { useTypewriter } from "./useTypewriter";
 import { saveVersion } from "./versioning";
 import {
   openDocument,
+  openMarkdownFile,
   importMarkdown,
+  insertMarkdown,
+  looksLikeMarkdown,
   importHtml,
   importDocx,
   exportMarkdown,
@@ -83,12 +86,11 @@ function DocEditorCore({
         spellcheck: String(settings.behaviour.spellCheck),
         class: "doc-editor-body",
       },
-      // Handle image paste (clipboard)
+      // Handle image paste (clipboard) and markdown-aware text paste
       handlePaste(view, event) {
         const items = event.clipboardData?.items;
-        if (!items) return false;
         let handled = false;
-        for (const item of Array.from(items)) {
+        for (const item of Array.from(items ?? [])) {
           if (item.type.startsWith("image/")) {
             const file = item.getAsFile();
             if (!file) continue;
@@ -105,33 +107,62 @@ function DocEditorCore({
             handled = true;
           }
         }
-        return handled;
+        if (handled) return true;
+
+        // Markdown auto-detect: when the clipboard carries only plain text (no
+        // rich HTML flavour) and it looks like Markdown, convert + insert it.
+        // Otherwise fall through to ProseMirror's default paste.
+        const cd = event.clipboardData;
+        const html = cd?.getData("text/html");
+        const text = cd?.getData("text/plain");
+        if (editor && !html && text && looksLikeMarkdown(text)) {
+          void insertMarkdown(editor, text);
+          return true;
+        }
+        return false;
       },
-      // Handle image drag-drop
+      // Handle image / markdown file drag-drop and dropped markdown text
       handleDrop(view, event, _slice, moved) {
         if (moved) return false;
+        const dropPos =
+          view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos ??
+          view.state.selection.from;
+
         const files = event.dataTransfer?.files;
-        if (!files || files.length === 0) return false;
-        let handled = false;
-        for (const file of Array.from(files)) {
-          if (file.type.startsWith("image/")) {
-            const reader = new FileReader();
-            const pos = view.posAtCoords({
-              left: event.clientX,
-              top: event.clientY,
-            });
-            reader.onload = () => {
-              const src = reader.result as string;
-              const alt = file.name;
-              const node = view.state.schema.nodes.image.create({ src, alt });
-              const tr = view.state.tr.insert(pos?.pos ?? 0, node);
-              view.dispatch(tr);
-            };
-            reader.readAsDataURL(file);
-            handled = true;
+        if (files && files.length > 0) {
+          let handled = false;
+          for (const file of Array.from(files)) {
+            if (file.type.startsWith("image/")) {
+              const reader = new FileReader();
+              reader.onload = () => {
+                const src = reader.result as string;
+                const node = view.state.schema.nodes.image.create({
+                  src,
+                  alt: file.name,
+                });
+                view.dispatch(view.state.tr.insert(dropPos, node));
+              };
+              reader.readAsDataURL(file);
+              handled = true;
+            } else if (
+              file.type === "text/markdown" ||
+              /\.(md|markdown)$/i.test(file.name)
+            ) {
+              if (editor) void file.text().then((t) => insertMarkdown(editor, t, dropPos));
+              handled = true;
+            }
           }
+          if (handled) return true;
         }
-        return handled;
+
+        // Dropped string (selected text from another app / the page) → treat as
+        // markdown and insert at the drop point.
+        const text = event.dataTransfer?.getData("text/plain");
+        if (editor && text) {
+          void insertMarkdown(editor, text, dropPos);
+          return true;
+        }
+        return false;
       },
     },
     immediatelyRender: false,
@@ -185,6 +216,14 @@ function DocEditorCore({
         } else {
           editor.commands.setContent(`<p>${result.text}</p>`);
         }
+        scheduleAutosave();
+        break;
+      }
+      case "import-md": {
+        if (dirty && !confirm("You have unsaved changes. Discard and import a Markdown file?")) return;
+        const result = await openMarkdownFile();
+        if (!result) return;
+        await importMarkdown(editor, result.text);
         scheduleAutosave();
         break;
       }
