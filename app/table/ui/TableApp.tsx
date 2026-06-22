@@ -12,18 +12,20 @@ import {
   type TableDoc,
   type CellPos,
   type ColumnType,
-  createEmptyDoc,
   docFromRows,
   setCell,
   setBlock,
   clearRange,
-  clearCells,
   setColWidth,
   setRowHeight,
   setColType,
   setColFormat,
   getColFormat,
   setFilters,
+  clearCellsGrid,
+  setCellList,
+  moveColumn,
+  moveRowInDoc,
   autoColWidth,
   ROW_HEIGHT,
   insertRows,
@@ -55,7 +57,20 @@ import {
 } from "~/table/lib/selection";
 import { createHistory } from "~/table/lib/history";
 import { type FindOptions, replaceAll, replaceInValue } from "~/table/lib/find";
-import { createAutosaver, loadDoc } from "~/table/io/persist";
+import { fillSeries } from "~/table/lib/fill";
+import {
+  type Workbook,
+  createWorkbook,
+  activeSheet,
+  withActiveSheet,
+  addSheet,
+  deleteSheet,
+  renameSheet,
+  duplicateSheet,
+  moveSheet,
+  setActive,
+} from "~/table/lib/workbook";
+import { createAutosaver, loadWorkbook } from "~/table/io/persist";
 import { copyMatrix } from "~/table/io/clipboard";
 import { getCell } from "~/table/lib/model";
 import { type ExportCtx, EXPORT_TARGETS } from "~/table/io/export";
@@ -76,10 +91,12 @@ import { SettingsDrawer } from "./SettingsDrawer";
 import { FindReplace } from "./FindReplace";
 import { ExportMenu } from "./ExportMenu";
 import { CommandPalette, type TableCommandCtx } from "./CommandPalette";
-import { Grid, type HeaderContextInfo, type ColBadge } from "./Grid";
+import { Grid, type HeaderContextInfo, type ColBadge, type FillInfo } from "./Grid";
+import { SheetTabs } from "./SheetTabs";
 
 export function TableApp() {
-  const [doc, setDoc] = useState<TableDoc>(() => createEmptyDoc());
+  const [workbook, setWorkbook] = useState<Workbook>(() => createWorkbook());
+  const doc = activeSheet(workbook);
   const [selection, setSelection] = useState<Selection>(() => singleCell(0, 0));
   const [loaded, setLoaded] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
@@ -105,22 +122,34 @@ export function TableApp() {
     [doc, locale],
   );
 
-  // Filter view: visible source rows, or null when no filter is active.
-  const view = useMemo(
-    () => computeView(doc, doc.filters ?? [], locale),
-    [doc, locale],
-  );
+  // Row view: visible source rows after filters + hidden rows (null = identity).
+  const view = useMemo(() => {
+    const base = computeView(doc, doc.filters ?? [], locale);
+    const hidden = doc.hiddenRows;
+    if (!base && !hidden?.length) return null;
+    const hiddenSet = new Set(hidden);
+    const rows = base ?? Array.from({ length: doc.nRows }, (_, i) => i);
+    return rows.filter((r) => !hiddenSet.has(r));
+  }, [doc, locale]);
 
-  const history = useRef(createHistory<TableDoc>(doc));
+  // Column view: visible source columns after hidden columns (null = identity).
+  const colView = useMemo(() => {
+    const hidden = doc.hiddenCols;
+    if (!hidden?.length) return null;
+    const set = new Set(hidden);
+    return Array.from({ length: doc.nCols }, (_, i) => i).filter((c) => !set.has(c));
+  }, [doc]);
+
+  const history = useRef(createHistory<Workbook>(workbook));
   const autosaver = useRef(createAutosaver((at) => setSavedAt(at)));
 
-  // ── Load persisted doc once ────────────────────────────────────────────────
+  // ── Load persisted workbook once (migrates a v1 single-sheet doc) ──────────
   useEffect(() => {
     let alive = true;
     void (async () => {
-      const saved = await loadDoc();
+      const saved = await loadWorkbook();
       if (alive && saved) {
-        setDoc(saved);
+        setWorkbook(saved);
         history.current.reset(saved);
       }
       if (alive) setLoaded(true);
@@ -132,6 +161,26 @@ export function TableApp() {
       saver.stop();
     };
   }, []);
+
+  // ── Mutation choke-points ──────────────────────────────────────────────────
+  // Whole-workbook update (sheet ops, title).
+  const applyWorkbook = useCallback(
+    (wb: Workbook, opts: { history?: boolean } = {}) => {
+      if (wb === workbook) return;
+      setWorkbook(wb);
+      if (opts.history !== false) history.current.push(wb);
+      autosaver.current.schedule(wb);
+    },
+    [workbook],
+  );
+  // Active-sheet update (the common case; wraps into the workbook).
+  const apply = useCallback(
+    (next: TableDoc, opts: { history?: boolean } = {}) => {
+      if (next === doc) return;
+      applyWorkbook(withActiveSheet(workbook, next), opts);
+    },
+    [doc, workbook, applyWorkbook],
+  );
 
   // ── Streaming import for big delimited files ───────────────────────────────
   const streamImport = useCallback(
@@ -145,29 +194,19 @@ export function TableApp() {
                 (p.total ? ` (${Math.round((p.bytes / p.total) * 100)}%)` : ""),
             ),
         });
-        setDoc(fresh);
+        fresh.id = doc.id;
+        fresh.name = doc.name;
+        const title = workbook.name && workbook.name !== "Untitled" ? workbook.name : file.name.replace(/\.[^.]+$/, "");
+        applyWorkbook({ ...withActiveSheet(workbook, fresh), name: title });
         setSelection(singleCell(0, 0));
         setSortSpec([]);
-        history.current.reset(fresh);
-        autosaver.current.schedule(fresh);
         showToast(`Imported ${fresh.nRows.toLocaleString()} rows from ${file.name}`);
       } catch (e) {
         showToast(`Parse failed: ${(e as Error).message}`, "error");
       }
       setProgress(null);
     },
-    [showToast],
-  );
-
-  // ── Central mutation choke-point ───────────────────────────────────────────
-  const apply = useCallback(
-    (next: TableDoc, opts: { history?: boolean } = {}) => {
-      if (next === doc) return;
-      setDoc(next);
-      if (opts.history !== false) history.current.push(next);
-      autosaver.current.schedule(next);
-    },
-    [doc],
+    [showToast, workbook, doc, applyWorkbook],
   );
 
   const onCommitCell = useCallback(
@@ -177,20 +216,23 @@ export function TableApp() {
     [doc, apply],
   );
 
-  // Map a DISPLAY-space row to its SOURCE row through the active filter view.
+  // Map DISPLAY-space indices to SOURCE indices through the filter/hidden views.
   const srcRow = useCallback((r: number) => (view ? view[r] : r), [view]);
+  const srcCol = useCallback((c: number) => (colView ? colView[c] : c), [colView]);
 
   const onClearRange = useCallback(
     (rect: Rect) => {
-      if (view) {
-        const rows: number[] = [];
-        for (let r = rect.r0; r <= rect.r1 && r < view.length; r++) rows.push(view[r]);
-        apply(clearCells(doc, rows, rect.c0, rect.c1));
-      } else {
+      if (!view && !colView) {
         apply(clearRange(doc, rect.r0, rect.c0, rect.r1, rect.c1));
+        return;
       }
+      const rows: number[] = [];
+      for (let r = rect.r0; r <= rect.r1; r++) rows.push(srcRow(r));
+      const cols: number[] = [];
+      for (let c = rect.c0; c <= rect.c1; c++) cols.push(srcCol(c));
+      apply(clearCellsGrid(doc, rows, cols));
     },
-    [doc, apply, view],
+    [doc, apply, view, colView, srcRow, srcCol],
   );
 
   // Resize is applied live but kept out of the undo stack (a drag would
@@ -215,11 +257,11 @@ export function TableApp() {
     for (let r = rect.r0; r <= rect.r1; r++) {
       const sr = srcRow(r);
       const row: string[] = [];
-      for (let c = rect.c0; c <= rect.c1; c++) row.push(getCell(doc, sr, c));
+      for (let c = rect.c0; c <= rect.c1; c++) row.push(getCell(doc, sr, srcCol(c)));
       rows.push(row);
     }
     return rows;
-  }, [doc, selection, srcRow]);
+  }, [doc, selection, srcRow, srcCol]);
 
   const onCopy = useCallback(
     (e: React.ClipboardEvent) => {
@@ -283,6 +325,58 @@ export function TableApp() {
       apply(setFilters(doc, f ? [...others, f] : others));
     },
     [doc, apply],
+  );
+
+  // ── Hide / show / freeze ───────────────────────────────────────────────────
+  const hideCol = useCallback(
+    (c: number) => apply({ ...doc, hiddenCols: [...new Set([...(doc.hiddenCols ?? []), c])] }),
+    [doc, apply],
+  );
+  const hideRow = useCallback(
+    (r: number) => apply({ ...doc, hiddenRows: [...new Set([...(doc.hiddenRows ?? []), r])] }),
+    [doc, apply],
+  );
+  const unhideAll = useCallback(
+    () => apply({ ...doc, hiddenCols: undefined, hiddenRows: undefined }),
+    [doc, apply],
+  );
+  // Freeze up to and including the given DISPLAY index.
+  const freezeCols = useCallback((c: number) => apply({ ...doc, frozenCols: c + 1 }), [doc, apply]);
+  const freezeRows = useCallback((r: number) => apply({ ...doc, frozenRows: r + 1 }), [doc, apply]);
+  const clearFreeze = useCallback(() => apply({ ...doc, frozenCols: 0, frozenRows: 0 }), [doc, apply]);
+  const moveCol = useCallback((c: number, dir: number) => apply(moveColumn(doc, c, c + dir)), [doc, apply]);
+  const moveRow = useCallback((r: number, dir: number) => apply(moveRowInDoc(doc, r, r + dir)), [doc, apply]);
+
+  // ── Fill handle ─────────────────────────────────────────────────────────────
+  const onFill = useCallback(
+    (info: FillInfo) => {
+      const { src, dest } = info;
+      const cells: { r: number; c: number; v: string }[] = [];
+      if (dest.r1 > src.r1) {
+        // Vertical fill: per column, continue the source column's series.
+        for (let c = src.c0; c <= src.c1; c++) {
+          const sCol = srcCol(c);
+          const sourceVals: string[] = [];
+          for (let r = src.r0; r <= src.r1; r++) sourceVals.push(getCell(doc, srcRow(r), sCol));
+          const series = fillSeries(sourceVals, dest.r1 - src.r1);
+          for (let i = 0; i < series.length; i++) cells.push({ r: srcRow(src.r1 + 1 + i), c: sCol, v: series[i] });
+        }
+      } else if (dest.c1 > src.c1) {
+        // Horizontal fill: per row, continue the source row's series.
+        for (let r = src.r0; r <= src.r1; r++) {
+          const sRow = srcRow(r);
+          const sourceVals: string[] = [];
+          for (let c = src.c0; c <= src.c1; c++) sourceVals.push(getCell(doc, sRow, srcCol(c)));
+          const series = fillSeries(sourceVals, dest.c1 - src.c1);
+          for (let i = 0; i < series.length; i++) cells.push({ r: sRow, c: srcCol(src.c1 + 1 + i), v: series[i] });
+        }
+      }
+      if (cells.length) {
+        apply(setCellList(doc, cells));
+        setSelection({ anchor: { r: dest.r0, c: dest.c0 }, focus: { r: dest.r1, c: dest.c1 } });
+      }
+    },
+    [doc, apply, srcRow, srcCol],
   );
 
   // Display helpers passed to the grid.
@@ -350,7 +444,7 @@ export function TableApp() {
   const undo = useCallback(() => {
     const prev = history.current.undo();
     if (prev) {
-      setDoc(prev);
+      setWorkbook(prev);
       autosaver.current.schedule(prev);
       force((n) => n + 1);
     }
@@ -359,7 +453,7 @@ export function TableApp() {
   const redo = useCallback(() => {
     const next = history.current.redo();
     if (next) {
-      setDoc(next);
+      setWorkbook(next);
       autosaver.current.schedule(next);
       force((n) => n + 1);
     }
@@ -386,31 +480,30 @@ export function TableApp() {
   }, [streamImport]);
 
   const newDoc = useCallback(() => {
-    if (!confirm("Start a new, empty table? Your current table will be cleared.")) return;
-    const fresh = createEmptyDoc();
-    setDoc(fresh);
+    if (!confirm("Start a new, empty workbook? Your current table will be cleared.")) return;
+    const fresh = createWorkbook();
+    setWorkbook(fresh);
     setSelection(singleCell(0, 0));
     setSortSpec([]);
     history.current.reset(fresh);
     autosaver.current.schedule(fresh);
   }, []);
 
-  // ── Import: bootstrap a fresh doc from the parsed rows ─────────────────────
+  // ── Import: replace the active sheet from the parsed rows ──────────────────
   const commitImport = useCallback(
     (rows: string[][], hasHeader: boolean) => {
-      const baseName =
-        doc.name && doc.name !== "Untitled"
-          ? doc.name
+      const title =
+        workbook.name && workbook.name !== "Untitled"
+          ? workbook.name
           : importSource?.filename?.replace(/\.[^.]+$/, "") ?? "Untitled";
       setImportSource(null);
-      const fresh = docFromRows(rows, baseName, hasHeader);
-      setDoc(fresh);
+      const fresh = docFromRows(rows, doc.name, hasHeader);
+      fresh.id = doc.id;
+      applyWorkbook({ ...withActiveSheet(workbook, fresh), name: title });
       setSelection(singleCell(0, 0));
       setSortSpec([]);
-      history.current.reset(fresh);
-      autosaver.current.schedule(fresh);
     },
-    [doc.name, importSource],
+    [doc, workbook, importSource, applyWorkbook],
   );
 
   // ── Paste: bootstrap when empty, else paste a block into the selection ─────
@@ -430,11 +523,11 @@ export function TableApp() {
         if (block && block.length && block.some((r) => r.length)) {
           e.preventDefault();
           const { r0, c0 } = rectOf(selection);
-          apply(setBlock(doc, srcRow(r0), c0, block));
+          apply(setBlock(doc, srcRow(r0), srcCol(c0), block));
         }
       }
     },
-    [doc, selection, apply, srcRow],
+    [doc, selection, apply, srcRow, srcCol],
   );
 
   // ── Drag & drop file / text import ─────────────────────────────────────────
@@ -509,12 +602,19 @@ export function TableApp() {
   // ── Header context-menu items ──────────────────────────────────────────────
   const headerMenuItems = useCallback((): MenuItem[] => {
     if (!headerCtx) return [];
+    const hasHidden = (doc.hiddenCols?.length ?? 0) + (doc.hiddenRows?.length ?? 0) > 0;
     if (headerCtx.kind === "col") {
       const c = headerCtx.index;
       return [
         { label: "Insert column left", onClick: () => doInsertCols(c) },
         { label: "Insert column right", onClick: () => doInsertCols(c + 1) },
         { label: "Auto-size column", onClick: () => onAutoSizeCol(c) },
+        { label: "Move left", onClick: () => moveCol(c, -1) },
+        { label: "Move right", onClick: () => moveCol(c, 1) },
+        { label: "Hide column", onClick: () => hideCol(c), separator: true },
+        ...(hasHidden ? [{ label: "Unhide all", onClick: unhideAll }] : []),
+        { label: "Freeze up to here", onClick: () => freezeCols(c) },
+        { label: "Unfreeze", onClick: clearFreeze },
         { label: "Delete column", onClick: () => doDeleteCols(c), separator: true, danger: true },
       ];
     }
@@ -523,18 +623,33 @@ export function TableApp() {
       { label: "Insert row above", onClick: () => doInsertRows(r) },
       { label: "Insert row below", onClick: () => doInsertRows(r + 1) },
       { label: "Reset row height", onClick: () => onRowHeight(r, ROW_HEIGHT) },
+      { label: "Move up", onClick: () => moveRow(r, -1) },
+      { label: "Move down", onClick: () => moveRow(r, 1) },
+      { label: "Hide row", onClick: () => hideRow(r), separator: true },
+      ...(hasHidden ? [{ label: "Unhide all", onClick: unhideAll }] : []),
+      { label: "Freeze up to here", onClick: () => freezeRows(r) },
+      { label: "Unfreeze", onClick: clearFreeze },
       { label: "Delete row", onClick: () => doDeleteRows(r), separator: true, danger: true },
     ];
-  }, [headerCtx, doInsertCols, doDeleteCols, doInsertRows, doDeleteRows, onAutoSizeCol, onRowHeight]);
+  }, [headerCtx, doc, doInsertCols, doDeleteCols, doInsertRows, doDeleteRows, onAutoSizeCol, onRowHeight, hideCol, hideRow, unhideAll, freezeCols, freezeRows, clearFreeze]);
 
-  // Find returns SOURCE positions; map back to a display row when filtered.
+  // Find returns SOURCE positions; map back to display coords when filtered/hidden.
   const gotoMatch = useCallback(
     (pos: CellPos) => {
       const dispR = view ? view.indexOf(pos.r) : pos.r;
-      if (dispR >= 0) setSelection(singleCell(dispR, pos.c));
+      const dispC = colView ? colView.indexOf(pos.c) : pos.c;
+      if (dispR >= 0 && dispC >= 0) setSelection(singleCell(dispR, dispC));
     },
-    [view],
+    [view, colView],
   );
+
+  // ── Sheet operations ────────────────────────────────────────────────────────
+  const onAddSheet = useCallback(() => { applyWorkbook(addSheet(workbook)); setSelection(singleCell(0, 0)); setSortSpec([]); }, [workbook, applyWorkbook]);
+  const onSelectSheet = useCallback((i: number) => { applyWorkbook(setActive(workbook, i), { history: false }); setSelection(singleCell(0, 0)); setSortSpec([]); }, [workbook, applyWorkbook]);
+  const onDeleteSheet = useCallback((i: number) => { if (workbook.sheets.length <= 1) return; if (!confirm(`Delete sheet "${workbook.sheets[i].name}"?`)) return; applyWorkbook(deleteSheet(workbook, i)); setSelection(singleCell(0, 0)); }, [workbook, applyWorkbook]);
+  const onRenameSheet = useCallback((i: number, name: string) => applyWorkbook(renameSheet(workbook, i, name)), [workbook, applyWorkbook]);
+  const onDuplicateSheet = useCallback((i: number) => { applyWorkbook(duplicateSheet(workbook, i)); setSelection(singleCell(0, 0)); }, [workbook, applyWorkbook]);
+  const onMoveSheet = useCallback((from: number, to: number) => applyWorkbook(moveSheet(workbook, from, to), { history: false }), [workbook, applyWorkbook]);
 
   // ── Persist settings ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -543,11 +658,11 @@ export function TableApp() {
 
   // ── document.title ─────────────────────────────────────────────────────────
   useEffect(() => {
-    document.title = doc.name ? `${doc.name} — Office` : "Table — Office";
+    document.title = workbook.name ? `${workbook.name} — Office` : "Table — Office";
     return () => {
       document.title = "Office";
     };
-  }, [doc.name]);
+  }, [workbook.name]);
 
   const btn =
     "inline-flex h-7 items-center gap-1 rounded border border-border bg-card px-2 text-xs transition-colors hover:border-accent disabled:opacity-40 disabled:hover:border-border";
@@ -567,9 +682,9 @@ export function TableApp() {
       <header className="flex flex-wrap items-center gap-2">
         <input
           type="text"
-          value={doc.name}
-          onChange={(e) => apply({ ...doc, name: e.target.value }, { history: false })}
-          aria-label="Table name"
+          value={workbook.name}
+          onChange={(e) => applyWorkbook({ ...workbook, name: e.target.value }, { history: false })}
+          aria-label="Workbook name"
           placeholder="Untitled"
           className="h-7 min-w-[8rem] flex-1 border-b border-transparent bg-transparent text-lg font-semibold tracking-tight text-fg placeholder:text-muted/50 focus:border-border focus:outline-none"
         />
@@ -647,10 +762,14 @@ export function TableApp() {
           onAutoSizeCol={onAutoSizeCol}
           onHeaderContext={setHeaderCtx}
           viewRows={view}
+          viewCols={colView}
           formatCell={formatCell}
           numericCol={numericCol}
           onColumnMenu={(col, x, y) => setColumnMenu({ col, x, y })}
           colBadge={colBadge}
+          onFill={onFill}
+          frozenRows={doc.frozenRows ?? 0}
+          frozenCols={doc.frozenCols ?? 0}
         />
         {findOpen && (
           <FindReplace
@@ -673,6 +792,17 @@ export function TableApp() {
           </div>
         )}
       </div>
+
+      {/* Sheet tabs */}
+      <SheetTabs
+        workbook={workbook}
+        onSelect={onSelectSheet}
+        onAdd={onAddSheet}
+        onRename={onRenameSheet}
+        onDelete={onDeleteSheet}
+        onDuplicate={onDuplicateSheet}
+        onMove={onMoveSheet}
+      />
 
       {/* Status bar */}
       <div className="flex items-center justify-between px-1 text-xs text-muted">

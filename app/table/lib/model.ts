@@ -49,6 +49,16 @@ export interface TableDoc {
   filters?: ColumnFilter[];
   /** Whether row 0 holds column labels (used by type inference + export). */
   hasHeader?: boolean;
+  // ── Sheet-level state (phase 2.1) ──────────────────────────────────────────
+  /** Stable id (within a workbook). */
+  id?: string;
+  /** Hidden column indices (kept in data, not rendered). */
+  hiddenCols?: number[];
+  /** Hidden row indices. */
+  hiddenRows?: number[];
+  /** Freeze the first N columns / rows so they stay visible while scrolling. */
+  frozenCols?: number;
+  frozenRows?: number;
 }
 
 export interface CellPos {
@@ -202,6 +212,46 @@ export function clearCells(
   return { ...doc, cols };
 }
 
+/** Clear the cartesian product of source rows × source cols (handles the
+ *  non-contiguous indices that filters / hidden columns produce). */
+export function clearCellsGrid(doc: TableDoc, rows: number[], cols: number[]): TableDoc {
+  if (rows.length === 0 || cols.length === 0) return doc;
+  const colArr = doc.cols.slice();
+  for (const c of cols) {
+    if (c >= doc.nCols) continue;
+    const col = (colArr[c] ?? []).slice();
+    for (const r of rows) if (r < col.length) col[r] = "";
+    colArr[c] = col;
+  }
+  return { ...doc, cols: colArr };
+}
+
+/** Write a batch of (row, col, value) cells in one pass (used by fill). */
+export function setCellList(
+  doc: TableDoc,
+  cells: { r: number; c: number; v: string }[],
+): TableDoc {
+  if (cells.length === 0) return doc;
+  let maxR = doc.nRows, maxC = doc.nCols;
+  for (const { r, c } of cells) {
+    if (r + 1 > maxR) maxR = r + 1;
+    if (c + 1 > maxC) maxC = c + 1;
+  }
+  let next = ensureSize(doc, maxR, maxC);
+  const colArr = next.cols.slice();
+  const touched = new Set<number>();
+  for (const { r, c, v } of cells) {
+    if (!touched.has(c)) {
+      colArr[c] = (colArr[c] ?? []).slice();
+      touched.add(c);
+    }
+    const col = colArr[c];
+    while (col.length <= r) col.push("");
+    col[r] = v;
+  }
+  return { ...next, cols: colArr };
+}
+
 export function setColWidth(doc: TableDoc, c: number, width: number): TableDoc {
   const colWidths = doc.colWidths.slice();
   colWidths[c] = Math.max(40, Math.round(width));
@@ -313,6 +363,47 @@ export function deleteCols(doc: TableDoc, at: number, count = 1): TableDoc {
     filters: undefined,
     nCols: doc.nCols - n,
   };
+}
+
+/** Move a column from index `from` to index `to` (clamped). */
+export function moveColumn(doc: TableDoc, from: number, to: number): TableDoc {
+  const t = Math.max(0, Math.min(to, doc.nCols - 1));
+  if (t === from) return doc;
+  const relocate = <T>(arr: T[]) => {
+    const a = arr.slice();
+    const [x] = a.splice(from, 1);
+    a.splice(t, 0, x);
+    return a;
+  };
+  return {
+    ...doc,
+    cols: relocate(doc.cols),
+    colTypes: relocate(doc.colTypes),
+    colWidths: relocate(doc.colWidths),
+    colFormats: doc.colFormats ? relocate(doc.colFormats) : undefined,
+    filters: undefined,
+  };
+}
+
+/** Move a row from index `from` to index `to` (clamped). */
+export function moveRowInDoc(doc: TableDoc, from: number, to: number): TableDoc {
+  const t = Math.max(0, Math.min(to, doc.nRows - 1));
+  if (t === from) return doc;
+  const cols = doc.cols.map((col) => {
+    const a = col.slice();
+    while (a.length < doc.nRows) a.push("");
+    const [x] = a.splice(from, 1);
+    a.splice(t, 0, x);
+    return a;
+  });
+  let rowHeights = doc.rowHeights;
+  if (rowHeights) {
+    const a = rowHeights.slice();
+    const [x] = a.splice(from, 1);
+    a.splice(t, 0, x);
+    rowHeights = a;
+  }
+  return { ...doc, cols, rowHeights };
 }
 
 function insertInto<T>(arr: T[], at: number, count: number, fill: T): T[] {
