@@ -58,6 +58,17 @@ export function SettingsDrawer({
           </select>
         </SettingsRow>
       </SettingsSection>
+
+      <SettingsSection title="Formulas">
+        <SettingsRow label="Export formulas as text" description="Exports keep the =… source instead of the evaluated value.">
+          <input
+            type="checkbox"
+            checked={settings.exportFormulasAsText}
+            onChange={(e) => onChange({ ...settings, exportFormulasAsText: e.target.checked })}
+            className="accent-accent"
+          />
+        </SettingsRow>
+      </SettingsSection>
     </Drawer>
   );
 }
