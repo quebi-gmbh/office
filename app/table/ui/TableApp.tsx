@@ -59,6 +59,18 @@ import { createHistory } from "~/table/lib/history";
 import { type FindOptions, replaceAll, replaceInValue } from "~/table/lib/find";
 import { fillSeries } from "~/table/lib/fill";
 import {
+  dedupeRows,
+  splitColumn,
+  mergeColumns,
+  transformColumns,
+  fillDown,
+  transpose,
+  unpivot,
+  groupAggregate,
+  flashFill,
+  type AggFn,
+} from "~/table/lib/transforms";
+import {
   type Workbook,
   createWorkbook,
   activeSheet,
@@ -90,6 +102,7 @@ import { ColumnMenu } from "./ColumnMenu";
 import { SettingsDrawer } from "./SettingsDrawer";
 import { FindReplace } from "./FindReplace";
 import { ExportMenu } from "./ExportMenu";
+import { DataMenu, type DataAction } from "./DataMenu";
 import { CommandPalette, type TableCommandCtx } from "./CommandPalette";
 import { Grid, type HeaderContextInfo, type ColBadge, type FillInfo } from "./Grid";
 import { SheetTabs } from "./SheetTabs";
@@ -379,6 +392,73 @@ export function TableApp() {
     [doc, apply, srcRow, srcCol],
   );
 
+  // ── Data transforms ─────────────────────────────────────────────────────────
+  const addSheetWithRows = useCallback(
+    (rows: string[][], name: string) => {
+      let wb = addSheet(workbook);
+      const idx = wb.active;
+      const sheet = docFromRows(rows, name, true);
+      sheet.id = wb.sheets[idx].id;
+      sheet.name = wb.sheets[idx].name;
+      wb = { ...wb, sheets: wb.sheets.map((s, i) => (i === idx ? sheet : s)) };
+      applyWorkbook(wb);
+      setSelection(singleCell(0, 0));
+    },
+    [workbook, applyWorkbook],
+  );
+
+  const runData = useCallback(
+    (action: DataAction) => {
+      const r = rectOf(selection);
+      const cols: number[] = [];
+      for (let c = r.c0; c <= r.c1; c++) cols.push(srcCol(c));
+      const c0 = srcCol(r.c0);
+      switch (action) {
+        case "dedupe":
+          apply(dedupeRows(doc, cols.length > 1 ? cols : undefined));
+          break;
+        case "split": {
+          const delim = prompt("Split delimiter (or leave blank for comma):", ",");
+          if (delim === null) return;
+          apply(splitColumn(doc, c0, { delimiter: delim || "," }));
+          break;
+        }
+        case "merge": {
+          const tpl = prompt('Template, e.g. "{A} - {B}":', "{A} {B}");
+          if (!tpl) return;
+          apply(mergeColumns(doc, tpl));
+          break;
+        }
+        case "trim": apply(transformColumns(doc, cols, { kind: "trim" })); break;
+        case "upper": apply(transformColumns(doc, cols, { kind: "upper" })); break;
+        case "lower": apply(transformColumns(doc, cols, { kind: "lower" })); break;
+        case "title": apply(transformColumns(doc, cols, { kind: "title" })); break;
+        case "regex": {
+          const pattern = prompt("Find (regex):");
+          if (pattern === null) return;
+          const replacement = prompt("Replace with:", "") ?? "";
+          apply(transformColumns(doc, cols, { kind: "regex", pattern, replacement }));
+          break;
+        }
+        case "fillDown": apply(fillDown(doc, cols)); break;
+        case "transpose": apply(transpose(doc)); break;
+        case "unpivot": {
+          if (cols.length < 2) { showToast("Select id column(s) + value column(s)", "error"); return; }
+          apply(unpivot(doc, [cols[0]], cols.slice(1)));
+          break;
+        }
+        case "group": {
+          const fn = (prompt("Aggregate function: sum, avg, min, max, count, median, countDistinct", "sum") || "sum").trim() as AggFn;
+          const rows = groupAggregate(doc, [c0], [{ col: srcCol(r.c1), fn }]);
+          addSheetWithRows(rows, "Group");
+          break;
+        }
+        case "flashFill": apply(flashFill(doc, c0)); break;
+      }
+    },
+    [doc, apply, selection, srcCol, showToast, addSheetWithRows],
+  );
+
   // Display helpers passed to the grid.
   const formatCell = useCallback(
     (raw: string, c: number) =>
@@ -597,6 +677,7 @@ export function TableApp() {
     importFile: openFilePicker,
     insertRow: () => doInsertRows(srcRow(rectOf(selection).r0) + 1),
     insertCol: () => doInsertCols(rectOf(selection).c0 + 1),
+    dataAction: (a) => runData(a as DataAction),
   };
 
   // ── Header context-menu items ──────────────────────────────────────────────
@@ -716,6 +797,7 @@ export function TableApp() {
           <button type="button" className={btn} onClick={() => setFindOpen(true)} title="Find & replace (Ctrl+F)">
             <Search size={12} /> Find
           </button>
+          <DataMenu onAction={runData} />
           <ExportMenu
             mode="download"
             label="Download"
