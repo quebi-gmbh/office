@@ -9,6 +9,7 @@ Hosted publicly via GitHub Pages at **[office.quebi.de](https://office.quebi.de)
 - **Code editor** — [office.quebi.de/code](https://office.quebi.de/code) — full-featured CodeMirror 6 editor with 20+ language modes, linting, Prettier formatting, Vim/Emacs keymaps, Markdown preview, and share-by-URL. See [Code editor docs](docs/code-editor.md).
 - **Document editor** — [office.quebi.de/docs](https://office.quebi.de/docs) — rich-text editor for notes and documents (coming soon).
 - **Paint** — [office.quebi.de/paint](https://office.quebi.de/paint) — simple Paint-like drawing tool.
+- **Table** — [office.quebi.de/table](https://office.quebi.de/table) — paste anything tabular into a fast virtualised grid; edit, type-infer, sort, filter, and export to CSV / TSV / JSON / XLSX / Markdown / LaTeX / Python / NumPy / MATLAB / SQL and more. See [Table docs](docs/table.md).
 
 More tools may follow.
 
