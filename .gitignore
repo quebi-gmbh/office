@@ -6,4 +6,4 @@ app/routes.gen.ts
 
 # local scratch
 .playwright-mcp/
-*.png
+/*.png
