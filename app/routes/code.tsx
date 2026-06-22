@@ -36,6 +36,7 @@ import type { FileState } from "~/lib/code-editor/io";
 import { langById, noLanguage } from "~/lib/code-editor/languages";
 import type { Lang } from "~/lib/code-editor/languages";
 import { LANG_STORAGE_KEY } from "~/lib/code-editor/lang-storage";
+import { takeCodeHandoff } from "~/lib/code-handoff";
 
 const DRAFT_KEY = "office:code:draft";
 
@@ -64,6 +65,15 @@ function CodeEditor() {
 
   // ── Load draft + hash share + restore language ────────────────────────────
   useEffect(() => {
+    // Handoff from another tool (e.g. /table "Open in /code") takes priority.
+    const handoff = takeCodeHandoff();
+    if (handoff) {
+      setValue(handoff.text);
+      if (langById.has(handoff.langId)) setLanguage(handoff.langId);
+      setFileState((s) => ({ ...s, dirty: true }));
+      setLoaded(true);
+      return;
+    }
     // Check for a shared URL hash first
     const hash = location.hash;
     if (hash) {

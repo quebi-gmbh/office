@@ -7,7 +7,7 @@
  * a single `apply()` choke-point (history + autosave).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Undo2, Redo2, FilePlus2, Upload, Search, Settings, Download, Copy, Sparkles } from "lucide-react";
+import { Undo2, Redo2, FilePlus2, Upload, Search, Settings, Download, Copy, Sparkles, Share2, History } from "lucide-react";
 import {
   type TableDoc,
   type CellPos,
@@ -42,7 +42,16 @@ import {
   isNumericType,
   DEFAULT_FORMAT,
 } from "~/table/lib/coltypes";
-import { type SortKey, sortDoc } from "~/table/lib/sort";
+import { type SortKey } from "~/table/lib/sort";
+import { sortDocAsync, groupAggregateAsync } from "~/table/io/compute";
+import {
+  shareUrl,
+  decodeShareHash,
+  fetchUrlToText,
+  openInCode,
+  exportPng,
+} from "~/table/io/share";
+import { saveSnapshot, type Snapshot } from "~/table/io/versioning";
 import { FormulaEngine, isFormula, resultToText } from "~/table/lib/formula";
 import { type CondRule, precomputeStats, decorate } from "~/table/lib/condformat";
 import { type ColumnFilter, computeView } from "~/table/lib/filter";
@@ -69,7 +78,6 @@ import {
   fillDown,
   transpose,
   unpivot,
-  groupAggregate,
   flashFill,
   type AggFn,
 } from "~/table/lib/transforms";
@@ -108,6 +116,8 @@ import { ExportMenu } from "./ExportMenu";
 import { DataMenu, type DataAction } from "./DataMenu";
 import { FormulaBar } from "./FormulaBar";
 import { InsightPanel } from "./InsightPanel";
+import { ShareModal } from "./ShareModal";
+import { HistoryModal } from "./HistoryModal";
 import { CommandPalette, type TableCommandCtx } from "./CommandPalette";
 import { Grid, type HeaderContextInfo, type ColBadge, type FillInfo, type CellDeco } from "./Grid";
 import { SheetTabs } from "./SheetTabs";
@@ -128,7 +138,11 @@ export function TableApp() {
   const [sortSpec, setSortSpec] = useState<SortKey[]>([]);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [insightOpen, setInsightOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
+  const editsSinceSnapshot = useRef(0);
+  const gridWrapRef = useRef<HTMLDivElement>(null);
   const [, force] = useState(0);
   const { show: showToast, ToastContainer } = useToast();
 
@@ -165,10 +179,20 @@ export function TableApp() {
   const history = useRef(createHistory<Workbook>(workbook));
   const autosaver = useRef(createAutosaver((at) => setSavedAt(at)));
 
-  // ── Load persisted workbook once (migrates a v1 single-sheet doc) ──────────
+  // ── Load: shared #table= hash first, else persisted workbook (v1 migrate) ──
   useEffect(() => {
     let alive = true;
     void (async () => {
+      if (location.hash.includes("table=")) {
+        const shared = await decodeShareHash(location.hash);
+        if (alive && shared) {
+          setWorkbook(shared);
+          history.current.reset(shared);
+          window.history.replaceState(null, "", location.pathname + location.search);
+          setLoaded(true);
+          return;
+        }
+      }
       const saved = await loadWorkbook();
       if (alive && saved) {
         setWorkbook(saved);
@@ -190,7 +214,14 @@ export function TableApp() {
     (wb: Workbook, opts: { history?: boolean } = {}) => {
       if (wb === workbook) return;
       setWorkbook(wb);
-      if (opts.history !== false) history.current.push(wb);
+      if (opts.history !== false) {
+        history.current.push(wb);
+        // Auto-snapshot every 25 committed edits.
+        if (++editsSinceSnapshot.current >= 25) {
+          editsSinceSnapshot.current = 0;
+          saveSnapshot(wb, Date.now());
+        }
+      }
       autosaver.current.schedule(wb);
     },
     [workbook],
@@ -327,7 +358,8 @@ export function TableApp() {
         ? [...sortSpec.filter((k) => k.col !== col), { col, dir }]
         : [{ col, dir }];
       setSortSpec(next);
-      apply(sortDoc(doc, next, locale));
+      // Runs in a Web Worker (sync fallback) so big sheets don't freeze the UI.
+      void sortDocAsync(doc, next, locale).then((d) => apply(d));
     },
     [doc, apply, locale, sortSpec],
   );
@@ -458,8 +490,7 @@ export function TableApp() {
         }
         case "group": {
           const fn = (prompt("Aggregate function: sum, avg, min, max, count, median, countDistinct", "sum") || "sum").trim() as AggFn;
-          const rows = groupAggregate(doc, [c0], [{ col: srcCol(r.c1), fn }]);
-          addSheetWithRows(rows, "Group");
+          void groupAggregateAsync(doc, [c0], [{ col: srcCol(r.c1), fn }]).then((rows) => addSheetWithRows(rows, "Group"));
           break;
         }
         case "flashFill": apply(flashFill(doc, c0)); break;
@@ -520,6 +551,58 @@ export function TableApp() {
       apply(next);
     },
     [doc, apply, selection, srcRow, srcCol],
+  );
+
+  // ── Sharing / history (phase 2.5) ──────────────────────────────────────────
+  const doShare = useCallback(async () => {
+    const { url, oversized } = await shareUrl(workbook);
+    await navigator.clipboard.writeText(url);
+    showToast(oversized ? "Link copied — large doc may exceed URL limits" : "Share link copied");
+  }, [workbook, showToast]);
+
+  const doLoadUrl = useCallback(
+    async (url: string) => {
+      setShareOpen(false);
+      setProgress(`Fetching ${url}…`);
+      try {
+        const { name, text } = await fetchUrlToText(url);
+        setImportSource(sourceFromText(text, name));
+      } catch (e) {
+        showToast((e as Error).message, "error");
+      }
+      setProgress(null);
+    },
+    [showToast],
+  );
+
+  const doOpenInCode = useCallback(
+    (format: "csv" | "json" | "python") => openInCode(doc, format),
+    [doc],
+  );
+
+  const doExportPng = useCallback(async () => {
+    if (!gridWrapRef.current) return;
+    try {
+      await exportPng(gridWrapRef.current, safeFilename(workbook.name, "png"));
+    } catch (e) {
+      showToast(`PNG export failed: ${(e as Error).message}`, "error");
+    }
+  }, [workbook.name, showToast]);
+
+  const snapshotNow = useCallback(() => {
+    editsSinceSnapshot.current = 0;
+    saveSnapshot(workbook, Date.now());
+    showToast("Snapshot saved");
+  }, [workbook, showToast]);
+
+  const restoreSnapshot = useCallback(
+    (snap: Snapshot) => {
+      applyWorkbook(snap.workbook); // pushes history, so the current draft is undoable
+      setSelection(singleCell(0, 0));
+      setHistoryOpen(false);
+      showToast("Snapshot restored");
+    },
+    [applyWorkbook, showToast],
   );
 
   // ── Export (Download as… / Copy as…) ───────────────────────────────────────
@@ -868,6 +951,12 @@ export function TableApp() {
           <button type="button" className={btn} onClick={() => setInsightOpen((v) => !v)} title="Insights (formatting + summary)">
             <Sparkles size={12} /> Insights
           </button>
+          <button type="button" className={btn} onClick={() => setShareOpen(true)} title="Share, URL import, open in /code, PNG">
+            <Share2 size={12} /> Share
+          </button>
+          <button type="button" className={btn} onClick={() => setHistoryOpen(true)} title="Version history">
+            <History size={12} /> History
+          </button>
           <button type="button" className={btn} onClick={() => setSettingsOpen(true)} title="Settings">
             <Settings size={12} /> Settings
           </button>
@@ -886,6 +975,7 @@ export function TableApp() {
       <div className="flex min-h-0 flex-1 gap-2">
       {/* Grid (drop target + paste/copy/cut root) */}
       <div
+        ref={gridWrapRef}
         className={`relative min-h-0 flex-1 overflow-hidden rounded-xl border ${
           isDragging ? "border-accent" : "border-border"
         }`}
@@ -1021,6 +1111,24 @@ export function TableApp() {
       />
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} ctx={paletteCtx} />
+
+      {shareOpen && (
+        <ShareModal
+          onClose={() => setShareOpen(false)}
+          onCopyLink={() => void doShare()}
+          onLoadUrl={(url) => void doLoadUrl(url)}
+          onOpenInCode={doOpenInCode}
+          onExportPng={() => void doExportPng()}
+        />
+      )}
+
+      {historyOpen && (
+        <HistoryModal
+          onClose={() => setHistoryOpen(false)}
+          onSnapshot={snapshotNow}
+          onRestore={restoreSnapshot}
+        />
+      )}
 
       {progress && (
         <div className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-full border border-accent/40 bg-card px-4 py-2 text-xs text-fg shadow-lg">
