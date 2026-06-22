@@ -7,17 +7,33 @@
  * a single `apply()` choke-point (history + autosave).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Undo2, Redo2, FilePlus2 } from "lucide-react";
+import { Undo2, Redo2, FilePlus2, Upload } from "lucide-react";
 import {
   type TableDoc,
   createEmptyDoc,
+  docFromRows,
   setCell,
+  setBlock,
   clearRange,
   setColWidth,
+  isEmptyDoc,
 } from "~/table/lib/model";
-import { type Selection, type Rect, singleCell } from "~/table/lib/selection";
+import {
+  type Selection,
+  type Rect,
+  singleCell,
+  rectOf,
+} from "~/table/lib/selection";
 import { createHistory } from "~/table/lib/history";
 import { createAutosaver, loadDoc } from "~/table/io/persist";
+import {
+  sourceFromFile,
+  sourceFromText,
+  sourceFromClipboard,
+  blockFromClipboard,
+  isImportableFile,
+} from "~/table/io/import";
+import { DetectModal, type ImportSource } from "./DetectModal";
 import { Grid } from "./Grid";
 
 export function TableApp() {
@@ -25,6 +41,8 @@ export function TableApp() {
   const [selection, setSelection] = useState<Selection>(() => singleCell(0, 0));
   const [loaded, setLoaded] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [importSource, setImportSource] = useState<ImportSource | null>(null);
+  const [isDragging, setDragging] = useState(false);
   const [, force] = useState(0);
 
   const history = useRef(createHistory<TableDoc>(doc));
@@ -101,6 +119,22 @@ export function TableApp() {
     }
   }, []);
 
+  const openFilePicker = useCallback(() => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".csv,.tsv,.txt,.json,.jsonl,.ndjson,.html,.htm,.md,.markdown,.xlsx,.xls";
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      try {
+        setImportSource(await sourceFromFile(file));
+      } catch {
+        alert("Could not read that file.");
+      }
+    };
+    input.click();
+  }, []);
+
   const newDoc = useCallback(() => {
     if (!confirm("Start a new, empty table? Your current table will be cleared.")) return;
     const fresh = createEmptyDoc();
@@ -109,6 +143,73 @@ export function TableApp() {
     history.current.reset(fresh);
     autosaver.current.schedule(fresh);
   }, []);
+
+  // ── Import: bootstrap a fresh doc from the parsed rows ─────────────────────
+  const commitImport = useCallback(
+    (rows: string[][], hasHeader: boolean) => {
+      const baseName =
+        doc.name && doc.name !== "Untitled"
+          ? doc.name
+          : importSource?.filename?.replace(/\.[^.]+$/, "") ?? "Untitled";
+      setImportSource(null);
+      const fresh = docFromRows(rows, baseName, hasHeader);
+      setDoc(fresh);
+      setSelection(singleCell(0, 0));
+      history.current.reset(fresh);
+      autosaver.current.schedule(fresh);
+    },
+    [doc.name, importSource],
+  );
+
+  // ── Paste: bootstrap when empty, else paste a block into the selection ─────
+  const onPaste = useCallback(
+    (e: React.ClipboardEvent) => {
+      // While editing a cell, let the input's own paste behaviour win.
+      if (document.activeElement?.tagName === "INPUT") return;
+      if (!e.clipboardData) return;
+      if (isEmptyDoc(doc)) {
+        const src = sourceFromClipboard(e.clipboardData);
+        if (src) {
+          e.preventDefault();
+          setImportSource(src);
+        }
+      } else {
+        const block = blockFromClipboard(e.clipboardData);
+        if (block && block.length && block.some((r) => r.length)) {
+          e.preventDefault();
+          const { r0, c0 } = rectOf(selection);
+          apply(setBlock(doc, r0, c0, block));
+        }
+      }
+    },
+    [doc, selection, apply],
+  );
+
+  // ── Drag & drop file / text import ─────────────────────────────────────────
+  const onDrop = useCallback(
+    async (e: React.DragEvent) => {
+      e.preventDefault();
+      setDragging(false);
+      const dt = e.dataTransfer;
+      const file = dt.files[0];
+      if (file) {
+        if (!isImportableFile(file.name) && !file.type.startsWith("text/")) return;
+        if (!isEmptyDoc(doc) && !confirm("Replace the current table with the dropped file?")) return;
+        try {
+          setImportSource(await sourceFromFile(file));
+        } catch {
+          alert("Could not read that file.");
+        }
+        return;
+      }
+      const text = dt.getData("text/plain");
+      if (text) {
+        if (!isEmptyDoc(doc) && !confirm("Replace the current table with the dropped text?")) return;
+        setImportSource(sourceFromText(text));
+      }
+    },
+    [doc],
+  );
 
   // ── Undo/redo keyboard shortcuts (document-level) ──────────────────────────
   useEffect(() => {
@@ -164,6 +265,9 @@ export function TableApp() {
           <button type="button" className={btn} onClick={newDoc} title="New table">
             <FilePlus2 size={12} /> New
           </button>
+          <button type="button" className={btn} onClick={openFilePicker} title="Import a file">
+            <Upload size={12} /> Import
+          </button>
           <button
             type="button"
             className={btn}
@@ -185,8 +289,21 @@ export function TableApp() {
         </div>
       </header>
 
-      {/* Grid */}
-      <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-border">
+      {/* Grid (drop target + paste root) */}
+      <div
+        className={`relative min-h-0 flex-1 overflow-hidden rounded-xl border ${
+          isDragging ? "border-accent" : "border-border"
+        }`}
+        onPaste={onPaste}
+        onDrop={onDrop}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={(e) => {
+          if (e.currentTarget === e.target) setDragging(false);
+        }}
+      >
         <Grid
           doc={doc}
           selection={selection}
@@ -195,6 +312,16 @@ export function TableApp() {
           onClearRange={onClearRange}
           onColWidth={onColWidth}
         />
+        {isDragging && (
+          <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center bg-bg/70 text-sm text-accent">
+            Drop a CSV / TSV / JSON / XLSX / HTML / Markdown file to import
+          </div>
+        )}
+        {isEmptyDoc(doc) && !isDragging && (
+          <div className="pointer-events-none absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-full border border-border bg-card/80 px-3 py-1 text-xs text-muted">
+            Paste tabular data (Ctrl/Cmd+V), drop a file, or just start typing
+          </div>
+        )}
       </div>
 
       {/* Status bar */}
@@ -208,6 +335,14 @@ export function TableApp() {
             : "All changes saved locally"}
         </span>
       </div>
+
+      {importSource && (
+        <DetectModal
+          source={importSource}
+          onCommit={commitImport}
+          onCancel={() => setImportSource(null)}
+        />
+      )}
     </section>
   );
 }
