@@ -74,7 +74,15 @@ async function build() {
     try {
       await $`SKIP_CSS=1 bun run ${join(here, "build.ts")}`.quiet();
       console.log(`✓ rebuilt in ${Math.round(performance.now() - t)}ms`);
-      for (const c of clients) c.enqueue(encoder.encode("data: reload\n\n"));
+      // Notify live clients; drop any whose stream has already closed (a stale
+      // tab) instead of letting the enqueue throw and abort the broadcast.
+      for (const c of clients) {
+        try {
+          c.enqueue(encoder.encode("data: reload\n\n"));
+        } catch {
+          clients.delete(c);
+        }
+      }
     } catch (err) {
       console.error("✗ build failed", err);
     }

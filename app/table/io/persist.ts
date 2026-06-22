@@ -7,7 +7,7 @@
  * version history and a recent-files drawer on top of the same store.
  */
 import { openStore } from "~/paint/io/idb";
-import type { TableDoc } from "~/table/lib/model";
+import { type Workbook, toWorkbook } from "~/table/lib/workbook";
 
 const DB_NAME = "office-table";
 const STORE_NAME = "documents";
@@ -17,7 +17,8 @@ const DEBOUNCE_MS = 1000;
 export interface TableAutosave {
   version: 1;
   savedAt: number;
-  doc: TableDoc;
+  /** Either a v2 Workbook or, in legacy records, a bare TableDoc. */
+  doc: unknown;
 }
 
 let storePromise: ReturnType<typeof openStore> | null = null;
@@ -25,23 +26,25 @@ function store() {
   return (storePromise ??= openStore(DB_NAME, STORE_NAME));
 }
 
-export async function loadDoc(): Promise<TableDoc | null> {
+/** Load the saved document, migrating a legacy single-sheet doc to a Workbook. */
+export async function loadWorkbook(): Promise<Workbook | null> {
   const s = await store();
   if (!s.available) return null;
   const rec = await s.get<TableAutosave>(CURRENT_KEY);
-  return rec?.doc ?? null;
+  if (!rec?.doc) return null;
+  return toWorkbook(rec.doc);
 }
 
-export async function saveDocNow(doc: TableDoc): Promise<void> {
+export async function saveWorkbookNow(wb: Workbook): Promise<void> {
   const s = await store();
   if (!s.available) return;
-  const rec: TableAutosave = { version: 1, savedAt: Date.now(), doc };
+  const rec: TableAutosave = { version: 1, savedAt: Date.now(), doc: wb };
   await s.put(CURRENT_KEY, rec);
 }
 
 export interface Autosaver {
-  /** Schedule a debounced save of the latest doc. */
-  schedule(doc: TableDoc): void;
+  /** Schedule a debounced save of the latest workbook. */
+  schedule(wb: Workbook): void;
   /** Save immediately (used on tab-hide / unmount). */
   flush(): void;
   stop(): void;
@@ -49,13 +52,13 @@ export interface Autosaver {
 
 export function createAutosaver(onSaved?: (at: number) => void): Autosaver {
   let timer: ReturnType<typeof setTimeout> | null = null;
-  let pending: TableDoc | null = null;
+  let pending: Workbook | null = null;
 
   async function doSave() {
     if (!pending) return;
-    const doc = pending;
+    const wb = pending;
     pending = null;
-    await saveDocNow(doc);
+    await saveWorkbookNow(wb);
     onSaved?.(Date.now());
   }
 
@@ -71,8 +74,8 @@ export function createAutosaver(onSaved?: (at: number) => void): Autosaver {
   }
 
   return {
-    schedule(doc) {
-      pending = doc;
+    schedule(wb) {
+      pending = wb;
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
         timer = null;
