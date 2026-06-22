@@ -7,7 +7,7 @@
  * a single `apply()` choke-point (history + autosave).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Undo2, Redo2, FilePlus2, Upload, Search, Settings, Download, Copy } from "lucide-react";
+import { Undo2, Redo2, FilePlus2, Upload, Search, Settings, Download, Copy, Sparkles } from "lucide-react";
 import {
   type TableDoc,
   type CellPos,
@@ -18,6 +18,7 @@ import {
   clearRange,
   setColWidth,
   setRowHeight,
+  setCellColors,
   setColType,
   setColFormat,
   getColFormat,
@@ -43,6 +44,7 @@ import {
 } from "~/table/lib/coltypes";
 import { type SortKey, sortDoc } from "~/table/lib/sort";
 import { FormulaEngine, isFormula, resultToText } from "~/table/lib/formula";
+import { type CondRule, precomputeStats, decorate } from "~/table/lib/condformat";
 import { type ColumnFilter, computeView } from "~/table/lib/filter";
 import {
   type TableSettings,
@@ -105,8 +107,9 @@ import { FindReplace } from "./FindReplace";
 import { ExportMenu } from "./ExportMenu";
 import { DataMenu, type DataAction } from "./DataMenu";
 import { FormulaBar } from "./FormulaBar";
+import { InsightPanel } from "./InsightPanel";
 import { CommandPalette, type TableCommandCtx } from "./CommandPalette";
-import { Grid, type HeaderContextInfo, type ColBadge, type FillInfo } from "./Grid";
+import { Grid, type HeaderContextInfo, type ColBadge, type FillInfo, type CellDeco } from "./Grid";
 import { SheetTabs } from "./SheetTabs";
 
 export function TableApp() {
@@ -124,6 +127,7 @@ export function TableApp() {
   const [columnMenu, setColumnMenu] = useState<{ col: number; x: number; y: number } | null>(null);
   const [sortSpec, setSortSpec] = useState<SortKey[]>([]);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [insightOpen, setInsightOpen] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
   const [, force] = useState(0);
   const { show: showToast, ToastContainer } = useToast();
@@ -482,6 +486,42 @@ export function TableApp() {
     [sortSpec, doc.filters],
   );
 
+  // ── Conditional formatting + cell colours (phase 2.4) ──────────────────────
+  const condStats = useMemo(
+    () => precomputeStats(doc, doc.condFormats ?? []),
+    [doc],
+  );
+  const cellDeco = useCallback(
+    (r: number, c: number): CellDeco | null => {
+      const manual = doc.cellColors?.[`${r}:${c}`];
+      const cond = doc.condFormats?.length ? decorate(doc, r, c, doc.condFormats, condStats) : null;
+      if (manual) return { ...cond, bg: manual };
+      return cond;
+    },
+    [doc, condStats],
+  );
+  const addRule = useCallback(
+    (rule: CondRule) => apply({ ...doc, condFormats: [...(doc.condFormats ?? []), rule] }),
+    [doc, apply],
+  );
+  const removeRule = useCallback(
+    (i: number) => apply({ ...doc, condFormats: (doc.condFormats ?? []).filter((_, j) => j !== i) }),
+    [doc, apply],
+  );
+  const setCellColor = useCallback(
+    (color: string | null) => {
+      const rect = rectOf(selection);
+      const rows: number[] = [];
+      for (let r = rect.r0; r <= rect.r1; r++) rows.push(srcRow(r));
+      const colsArr: number[] = [];
+      for (let c = rect.c0; c <= rect.c1; c++) colsArr.push(srcCol(c));
+      let next = doc;
+      for (const r of rows) for (const c of colsArr) next = setCellColors(next, r, c, r, c, color);
+      apply(next);
+    },
+    [doc, apply, selection, srcRow, srcCol],
+  );
+
   // ── Export (Download as… / Copy as…) ───────────────────────────────────────
   const handleExport = useCallback(
     async (targetId: string, mode: "download" | "copy") => {
@@ -825,6 +865,9 @@ export function TableApp() {
             icon={<Copy size={12} />}
             onPick={(id) => void handleExport(id, "copy")}
           />
+          <button type="button" className={btn} onClick={() => setInsightOpen((v) => !v)} title="Insights (formatting + summary)">
+            <Sparkles size={12} /> Insights
+          </button>
           <button type="button" className={btn} onClick={() => setSettingsOpen(true)} title="Settings">
             <Settings size={12} /> Settings
           </button>
@@ -839,6 +882,8 @@ export function TableApp() {
         onCommit={(v) => onCommitCell(srcRow(rectOf(selection).r0), srcCol(rectOf(selection).c0), v)}
       />
 
+      {/* Grid + insight rail */}
+      <div className="flex min-h-0 flex-1 gap-2">
       {/* Grid (drop target + paste/copy/cut root) */}
       <div
         className={`relative min-h-0 flex-1 overflow-hidden rounded-xl border ${
@@ -875,6 +920,7 @@ export function TableApp() {
           onFill={onFill}
           frozenRows={doc.frozenRows ?? 0}
           frozenCols={doc.frozenCols ?? 0}
+          cellDeco={cellDeco}
         />
         {findOpen && (
           <FindReplace
@@ -896,6 +942,17 @@ export function TableApp() {
             Paste tabular data (Ctrl/Cmd+V), drop a file, or just start typing
           </div>
         )}
+      </div>
+      {insightOpen && (
+        <InsightPanel
+          doc={doc}
+          rect={rectOf(selection)}
+          onClose={() => setInsightOpen(false)}
+          onAddRule={addRule}
+          onRemoveRule={removeRule}
+          onSetCellColor={setCellColor}
+        />
+      )}
       </div>
 
       {/* Sheet tabs */}

@@ -19,6 +19,7 @@
 
 import type { ColFormat } from "./coltypes";
 import type { ColumnFilter } from "./filter";
+import type { CondRule } from "./condformat";
 
 export type ColumnType =
   | "text"
@@ -59,6 +60,10 @@ export interface TableDoc {
   /** Freeze the first N columns / rows so they stay visible while scrolling. */
   frozenCols?: number;
   frozenRows?: number;
+  /** Conditional formatting rules (phase 2.4). */
+  condFormats?: CondRule[];
+  /** Manual cell background colours, keyed "r:c" (phase 2.4). */
+  cellColors?: Record<string, string>;
 }
 
 export interface CellPos {
@@ -276,6 +281,26 @@ export function getColFormat(doc: TableDoc, c: number): ColFormat | null {
 
 export function setFilters(doc: TableDoc, filters: ColumnFilter[]): TableDoc {
   return { ...doc, filters: filters.length ? filters : undefined };
+}
+
+/** Set (or clear, with null) manual background colours over a rectangle. */
+export function setCellColors(
+  doc: TableDoc,
+  r0: number,
+  c0: number,
+  r1: number,
+  c1: number,
+  color: string | null,
+): TableDoc {
+  const cellColors = { ...(doc.cellColors ?? {}) };
+  for (let r = r0; r <= r1; r++) {
+    for (let c = c0; c <= c1; c++) {
+      const k = `${r}:${c}`;
+      if (color) cellColors[k] = color;
+      else delete cellColors[k];
+    }
+  }
+  return { ...doc, cellColors: Object.keys(cellColors).length ? cellColors : undefined };
 }
 
 export function rowHeight(doc: TableDoc, r: number): number {

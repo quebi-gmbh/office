@@ -39,6 +39,13 @@ import {
   singleCell,
   clamp,
 } from "~/table/lib/selection";
+import { isSvgValue, svgPayload } from "~/table/lib/sparkline";
+
+export interface CellDeco {
+  bg?: string;
+  bar?: number;
+  barColor?: string;
+}
 
 const OVERSCAN = 4;
 
@@ -86,6 +93,8 @@ export interface GridProps {
   /** Frozen pane sizes (display counts). */
   frozenRows?: number;
   frozenCols?: number;
+  /** Per-cell decoration (conditional formatting + manual colours), source coords. */
+  cellDeco?: (r: number, c: number) => CellDeco | null;
 }
 
 interface EditState {
@@ -113,6 +122,7 @@ export function Grid({
   onFill,
   frozenRows = 0,
   frozenCols = 0,
+  cellDeco,
 }: GridProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -329,6 +339,9 @@ export function Grid({
     const editing = edit?.r === r && edit?.c === c;
     const raw = getCell(doc, sr(r), sc(c));
     const h = rowHeight(doc, sr(r));
+    const deco = cellDeco?.(sr(r), sc(c));
+    const display = editing ? "" : formatCell ? formatCell(raw, sc(c), sr(r)) : raw;
+    const svg = !editing && isSvgValue(display);
     return (
       <div
         key={`${r}:${c}`}
@@ -336,8 +349,8 @@ export function Grid({
         onPointerEnter={() => onCellPointerEnter(r, c)}
         onDoubleClick={() => beginEdit(r, c)}
         className={`absolute box-border overflow-hidden whitespace-nowrap border-b border-r border-border px-1.5 text-sm ${
-          numericCol?.(sc(c)) ? "text-right tabular-nums" : ""
-        } ${selected || inFill ? "bg-accent/10" : "bg-bg"} ${
+          numericCol?.(sc(c)) && !svg ? "text-right tabular-nums" : ""
+        } ${selected || inFill ? "bg-accent/10" : deco?.bg ? "" : "bg-bg"} ${
           isFocus ? "z-[1] outline outline-2 -outline-offset-2 outline-accent" : ""
         }`}
         style={{
@@ -346,9 +359,21 @@ export function Grid({
           width: colWidth(doc, sc(c)),
           height: h,
           lineHeight: `${h - 2}px`,
+          background: deco?.bg && !(selected || inFill) ? deco.bg : undefined,
+          color: deco?.bg ? "#111" : undefined,
         }}
       >
-        {editing ? null : formatCell ? formatCell(raw, sc(c), sr(r)) : raw}
+        {deco?.bar != null && (
+          <div
+            className="pointer-events-none absolute inset-y-0 left-0 opacity-30"
+            style={{ width: `${deco.bar * 100}%`, background: deco.barColor ?? "var(--color-accent)" }}
+          />
+        )}
+        {svg ? (
+          <span className="relative block h-full w-full" dangerouslySetInnerHTML={{ __html: svgPayload(display) }} />
+        ) : (
+          <span className="relative">{editing ? null : display}</span>
+        )}
       </div>
     );
   };
