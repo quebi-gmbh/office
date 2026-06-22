@@ -77,7 +77,7 @@ export interface GridProps {
   onHeaderContext?: (info: HeaderContextInfo) => void;
   viewRows?: number[] | null;
   viewCols?: number[] | null;
-  formatCell?: (raw: string, c: number) => string;
+  formatCell?: (raw: string, c: number, r: number) => string;
   numericCol?: (c: number) => boolean;
   onColumnMenu?: (c: number, x: number, y: number) => void;
   colBadge?: (c: number) => ColBadge | null;
@@ -348,7 +348,7 @@ export function Grid({
           lineHeight: `${h - 2}px`,
         }}
       >
-        {editing ? null : formatCell ? formatCell(raw, sc(c)) : raw}
+        {editing ? null : formatCell ? formatCell(raw, sc(c), sr(r)) : raw}
       </div>
     );
   };

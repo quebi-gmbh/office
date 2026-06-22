@@ -42,6 +42,7 @@ import {
   DEFAULT_FORMAT,
 } from "~/table/lib/coltypes";
 import { type SortKey, sortDoc } from "~/table/lib/sort";
+import { FormulaEngine, isFormula, resultToText } from "~/table/lib/formula";
 import { type ColumnFilter, computeView } from "~/table/lib/filter";
 import {
   type TableSettings,
@@ -103,6 +104,7 @@ import { SettingsDrawer } from "./SettingsDrawer";
 import { FindReplace } from "./FindReplace";
 import { ExportMenu } from "./ExportMenu";
 import { DataMenu, type DataAction } from "./DataMenu";
+import { FormulaBar } from "./FormulaBar";
 import { CommandPalette, type TableCommandCtx } from "./CommandPalette";
 import { Grid, type HeaderContextInfo, type ColBadge, type FillInfo } from "./Grid";
 import { SheetTabs } from "./SheetTabs";
@@ -144,6 +146,9 @@ export function TableApp() {
     const rows = base ?? Array.from({ length: doc.nRows }, (_, i) => i);
     return rows.filter((r) => !hiddenSet.has(r));
   }, [doc, locale]);
+
+  // Formula engine — rebuilt when the workbook changes; memoises per cell.
+  const engine = useMemo(() => new FormulaEngine(workbook), [workbook]);
 
   // Column view: visible source columns after hidden columns (null = identity).
   const colView = useMemo(() => {
@@ -459,11 +464,13 @@ export function TableApp() {
     [doc, apply, selection, srcCol, showToast, addSheetWithRows],
   );
 
-  // Display helpers passed to the grid.
+  // Display helpers passed to the grid (formula cells show their evaluated value).
   const formatCell = useCallback(
-    (raw: string, c: number) =>
-      formatValue(raw, colTypes[c], getColFormat(doc, c) ?? DEFAULT_FORMAT, locale),
-    [colTypes, doc, locale],
+    (raw: string, c: number, r: number) => {
+      if (isFormula(raw)) return engine.displayText(workbook.active, r, c) ?? raw;
+      return formatValue(raw, colTypes[c], getColFormat(doc, c) ?? DEFAULT_FORMAT, locale);
+    },
+    [colTypes, doc, locale, engine, workbook.active],
   );
   const numericCol = useCallback((c: number) => isNumericType(colTypes[c]), [colTypes]);
   const colBadge = useCallback(
@@ -480,8 +487,16 @@ export function TableApp() {
     async (targetId: string, mode: "download" | "copy") => {
       const target = EXPORT_TARGETS.find((t) => t.id === targetId);
       if (!target) return;
+      // Formulas export as their evaluated value by default (toggle in settings).
+      let exportDoc = doc;
+      if (!settings.exportFormulasAsText) {
+        const cols = doc.cols.map((col, c) =>
+          col.map((v, r) => (isFormula(v) ? resultToText(engine.evalCell(workbook.active, r, c)) : v)),
+        );
+        exportDoc = { ...doc, cols };
+      }
       const ctx: ExportCtx = {
-        doc,
+        doc: exportDoc,
         types: colTypes,
         formats: Array.from({ length: doc.nCols }, (_, c) => getColFormat(doc, c)),
         locale,
@@ -501,7 +516,7 @@ export function TableApp() {
         showToast(`Export failed: ${(e as Error).message}`, "error");
       }
     },
-    [doc, colTypes, locale, showToast],
+    [doc, colTypes, locale, showToast, settings.exportFormulasAsText, engine, workbook.active],
   );
 
   // ── Find & replace ─────────────────────────────────────────────────────────
@@ -815,6 +830,14 @@ export function TableApp() {
           </button>
         </div>
       </header>
+
+      {/* Formula bar */}
+      <FormulaBar
+        row={srcRow(rectOf(selection).r0)}
+        col={srcCol(rectOf(selection).c0)}
+        value={getCell(doc, srcRow(rectOf(selection).r0), srcCol(rectOf(selection).c0))}
+        onCommit={(v) => onCommitCell(srcRow(rectOf(selection).r0), srcCol(rectOf(selection).c0), v)}
+      />
 
       {/* Grid (drop target + paste/copy/cut root) */}
       <div

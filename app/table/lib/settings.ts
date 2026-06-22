@@ -10,12 +10,14 @@ export interface TableSettings {
   localeTag: string;
   /** Override day/month order for ambiguous numeric dates. */
   dateOrder: "auto" | "dmy" | "mdy";
+  /** Export `=…` cells as their formula source rather than evaluated value. */
+  exportFormulasAsText: boolean;
 }
 
 const KEY = "office:table:settings";
 
 export function defaultSettings(): TableSettings {
-  return { localeTag: "", dateOrder: "auto" };
+  return { localeTag: "", dateOrder: "auto", exportFormulasAsText: false };
 }
 
 export function loadSettings(): TableSettings {
