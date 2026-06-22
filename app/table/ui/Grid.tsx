@@ -51,16 +51,33 @@ export interface HeaderContextInfo {
   y: number;
 }
 
+export interface ColBadge {
+  sort?: "asc" | "desc";
+  filtered?: boolean;
+}
+
 export interface GridProps {
   doc: TableDoc;
   selection: Selection;
   onSelectionChange: (sel: Selection) => void;
+  /** Receives the SOURCE row (already mapped through the view). */
   onCommitCell: (r: number, c: number, value: string) => void;
+  /** Receives a DISPLAY-space rect (the caller maps rows through the view). */
   onClearRange: (rect: Rect) => void;
   onColWidth: (c: number, width: number) => void;
   onRowHeight?: (r: number, height: number) => void;
   onAutoSizeCol?: (c: number) => void;
   onHeaderContext?: (info: HeaderContextInfo) => void;
+  /** Visible source-row indices (filter view); null = identity. */
+  viewRows?: number[] | null;
+  /** Display formatter for a raw value in column c. */
+  formatCell?: (raw: string, c: number) => string;
+  /** Right-align column c (numeric types). */
+  numericCol?: (c: number) => boolean;
+  /** Open the column menu (sort/filter/type) for column c. */
+  onColumnMenu?: (c: number, x: number, y: number) => void;
+  /** Sort/filter badge for a column header. */
+  colBadge?: (c: number) => ColBadge | null;
 }
 
 interface EditState {
@@ -79,6 +96,11 @@ export function Grid({
   onRowHeight,
   onAutoSizeCol,
   onHeaderContext,
+  viewRows,
+  formatCell,
+  numericCol,
+  onColumnMenu,
+  colBadge,
 }: GridProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -97,20 +119,26 @@ export function Grid({
     return xs;
   }, [doc]);
 
-  // Cumulative row y-offsets (length nRows + 1). Uniform unless rows resized.
+  // Display-row count + display→source mapping (filter view).
+  const nDisp = viewRows ? viewRows.length : doc.nRows;
+  const src = (r: number) => (viewRows ? viewRows[r] : r);
+
+  // Cumulative DISPLAY-row y-offsets (length nDisp + 1). Uniform unless rows
+  // were resized; with a filter view, sums the source rows' heights in order.
   const rowY = useMemo(() => {
-    const ys = new Array<number>(doc.nRows + 1);
+    const ys = new Array<number>(nDisp + 1);
     ys[0] = 0;
-    if (!doc.rowHeights) {
-      for (let r = 0; r <= doc.nRows; r++) ys[r] = r * ROW_HEIGHT;
+    if (!doc.rowHeights && !viewRows) {
+      for (let r = 0; r <= nDisp; r++) ys[r] = r * ROW_HEIGHT;
     } else {
-      for (let r = 0; r < doc.nRows; r++) ys[r + 1] = ys[r] + rowHeight(doc, r);
+      for (let r = 0; r < nDisp; r++) ys[r + 1] = ys[r] + rowHeight(doc, src(r));
     }
     return ys;
-  }, [doc]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc, viewRows, nDisp]);
 
   const totalW = colX[doc.nCols];
-  const totalH = rowY[doc.nRows];
+  const totalH = rowY[nDisp];
 
   // ── Track viewport size ──────────────────────────────────────────────────
   useLayoutEffect(() => {
@@ -129,16 +157,16 @@ export function Grid({
   // in O(log n).
   const rowAt = (y: number) => {
     let lo = 0;
-    let hi = doc.nRows;
+    let hi = nDisp;
     while (lo < hi) {
       const mid = (lo + hi) >> 1;
       if (rowY[mid + 1] <= y) lo = mid + 1;
       else hi = mid;
     }
-    return Math.min(lo, doc.nRows - 1);
+    return Math.min(lo, nDisp - 1);
   };
   const r0 = Math.max(0, rowAt(scroll.top) - OVERSCAN);
-  const r1 = Math.min(doc.nRows - 1, rowAt(scroll.top + viewport.h) + OVERSCAN);
+  const r1 = Math.min(nDisp - 1, rowAt(scroll.top + viewport.h) + OVERSCAN);
 
   let c0 = 0;
   while (c0 < doc.nCols - 1 && colX[c0 + 1] <= scroll.left - ROW_HEADER_WIDTH)
@@ -156,7 +184,7 @@ export function Grid({
 
   // ── Editing ──────────────────────────────────────────────────────────────
   const beginEdit = (r: number, c: number, initial?: string) => {
-    setEdit({ r, c, value: initial ?? getCell(doc, r, c) });
+    setEdit({ r, c, value: initial ?? getCell(doc, src(r), c) });
   };
 
   useEffect(() => {
@@ -175,7 +203,7 @@ export function Grid({
     const e = editRef.current;
     if (!e) return;
     editRef.current = null;
-    onCommitCell(e.r, e.c, e.value);
+    onCommitCell(src(e.r), e.c, e.value);
     setEdit(null);
     if (move) moveActive(move.dr, move.dc, false);
     scrollRef.current?.focus();
@@ -189,7 +217,7 @@ export function Grid({
   // ── Selection movement ─────────────────────────────────────────────────────
   const moveActive = (dr: number, dc: number, extend: boolean) => {
     const f = selection.focus;
-    const r = clamp(f.r + dr, 0, doc.nRows - 1);
+    const r = clamp(f.r + dr, 0, nDisp - 1);
     const c = clamp(f.c + dc, 0, doc.nCols - 1);
     const next: Selection = extend
       ? { anchor: selection.anchor, focus: { r, c } }
@@ -226,7 +254,7 @@ export function Grid({
       e.preventDefault();
       onSelectionChange({
         anchor: { r: 0, c: 0 },
-        focus: { r: doc.nRows - 1, c: doc.nCols - 1 },
+        focus: { r: nDisp - 1, c: doc.nCols - 1 },
       });
       return;
     }
@@ -314,9 +342,12 @@ export function Grid({
   const cells: React.ReactNode[] = [];
   for (let r = r0; r <= r1; r++) {
     for (let c = c0; c <= c1; c++) {
+      const sr = src(r);
       const selected = inRect(rect, r, c);
       const isFocus = selection.focus.r === r && selection.focus.c === c;
       const editing = edit?.r === r && edit?.c === c;
+      const raw = getCell(doc, sr, c);
+      const h = rowHeight(doc, sr);
       cells.push(
         <div
           key={`${r}:${c}`}
@@ -324,17 +355,19 @@ export function Grid({
           onPointerEnter={() => onCellPointerEnter(r, c)}
           onDoubleClick={() => beginEdit(r, c)}
           className={`absolute box-border overflow-hidden whitespace-nowrap border-b border-r border-border px-1.5 text-sm ${
-            selected ? "bg-accent/10" : ""
-          } ${isFocus ? "z-[1] outline outline-2 -outline-offset-2 outline-accent" : ""}`}
+            numericCol?.(c) ? "text-right tabular-nums" : ""
+          } ${selected ? "bg-accent/10" : ""} ${
+            isFocus ? "z-[1] outline outline-2 -outline-offset-2 outline-accent" : ""
+          }`}
           style={{
             top: HEADER_HEIGHT + rowY[r],
             left: ROW_HEADER_WIDTH + colX[c],
             width: colWidth(doc, c),
-            height: rowHeight(doc, r),
-            lineHeight: `${rowHeight(doc, r) - 2}px`,
+            height: h,
+            lineHeight: `${h - 2}px`,
           }}
         >
-          {editing ? null : getCell(doc, r, c)}
+          {editing ? null : formatCell ? formatCell(raw, c) : raw}
         </div>,
       );
     }
@@ -344,6 +377,7 @@ export function Grid({
   const colHeaders: React.ReactNode[] = [];
   for (let c = c0; c <= c1; c++) {
     const active = c >= rect.c0 && c <= rect.c1;
+    const badge = colBadge?.(c);
     colHeaders.push(
       <div
         key={c}
@@ -352,7 +386,7 @@ export function Grid({
           e.preventDefault();
           onHeaderContext?.({ kind: "col", index: c, x: e.clientX, y: e.clientY });
         }}
-        className={`absolute box-border flex cursor-pointer items-center justify-center border-b border-r border-border text-xs font-medium ${
+        className={`group absolute box-border flex cursor-pointer items-center justify-center gap-0.5 border-b border-r border-border text-xs font-medium ${
           active ? "bg-accent/20 text-fg" : "bg-card text-muted"
         }`}
         style={{
@@ -362,7 +396,24 @@ export function Grid({
           height: HEADER_HEIGHT,
         }}
       >
-        {colToLabel(c)}
+        <span>{colToLabel(c)}</span>
+        {badge?.sort && <span className="text-accent">{badge.sort === "asc" ? "▲" : "▼"}</span>}
+        {badge?.filtered && <span className="text-accent" title="Filtered">⏷</span>}
+        {onColumnMenu && (
+          <button
+            type="button"
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+              onColumnMenu(c, r.left, r.bottom);
+            }}
+            className="absolute right-2 opacity-0 group-hover:opacity-100 text-muted hover:text-accent"
+            aria-label={`Column ${colToLabel(c)} menu`}
+          >
+            ▾
+          </button>
+        )}
         <div
           onPointerDown={(e) => startColResize(e, c)}
           onDoubleClick={(e) => {
@@ -378,6 +429,7 @@ export function Grid({
   // Row headers (sticky left).
   const rowHeaders: React.ReactNode[] = [];
   for (let r = r0; r <= r1; r++) {
+    const sr = src(r);
     const active = r >= rect.r0 && r <= rect.r1;
     rowHeaders.push(
       <div
@@ -385,7 +437,7 @@ export function Grid({
         onPointerDown={(e) => onHeaderSelect(e, "row", r)}
         onContextMenu={(e) => {
           e.preventDefault();
-          onHeaderContext?.({ kind: "row", index: r, x: e.clientX, y: e.clientY });
+          onHeaderContext?.({ kind: "row", index: sr, x: e.clientX, y: e.clientY });
         }}
         className={`absolute box-border flex cursor-pointer items-center justify-center border-b border-r border-border text-xs ${
           active ? "bg-accent/20 text-fg" : "bg-card text-muted"
@@ -394,16 +446,16 @@ export function Grid({
           top: HEADER_HEIGHT + rowY[r],
           left: 0,
           width: ROW_HEADER_WIDTH,
-          height: rowHeight(doc, r),
+          height: rowHeight(doc, sr),
         }}
       >
-        {r + 1}
+        {sr + 1}
         {onRowHeight && (
           <div
-            onPointerDown={(e) => startRowResize(e, r)}
+            onPointerDown={(e) => startRowResize(e, sr)}
             onDoubleClick={(e) => {
               e.stopPropagation();
-              onRowHeight(r, ROW_HEIGHT);
+              onRowHeight(sr, ROW_HEIGHT);
             }}
             className="absolute bottom-0 left-0 h-1.5 w-full cursor-row-resize hover:bg-accent"
           />
@@ -419,7 +471,7 @@ export function Grid({
     if (kind === "col") {
       onSelectionChange({
         anchor: { r: 0, c: index },
-        focus: { r: doc.nRows - 1, c: index },
+        focus: { r: nDisp - 1, c: index },
       });
     } else {
       onSelectionChange({
@@ -509,7 +561,7 @@ export function Grid({
               top: HEADER_HEIGHT + rowY[edit.r],
               left: ROW_HEADER_WIDTH + colX[edit.c],
               width: colWidth(doc, edit.c),
-              height: rowHeight(doc, edit.r),
+              height: rowHeight(doc, src(edit.r)),
             }}
           />
         )}

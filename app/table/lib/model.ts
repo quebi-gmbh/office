@@ -17,6 +17,9 @@
  * of doc references cheaply (≈ one column copy per edit).
  */
 
+import type { ColFormat } from "./coltypes";
+import type { ColumnFilter } from "./filter";
+
 export type ColumnType =
   | "text"
   | "number"
@@ -40,6 +43,10 @@ export interface TableDoc {
   /** Per-row height in px; null/absent = default ROW_HEIGHT. Sparse: only
    *  resized rows need an entry. */
   rowHeights?: (number | null)[];
+  /** Per-column display format; null = auto. */
+  colFormats?: (ColFormat | null)[];
+  /** Active per-column filters (non-destructive view). */
+  filters?: ColumnFilter[];
   /** Whether row 0 holds column labels (used by type inference + export). */
   hasHeader?: boolean;
 }
@@ -179,10 +186,46 @@ export function clearRange(
   return { ...doc, cols };
 }
 
+/** Clear specific (possibly non-contiguous) rows across columns c0..c1. */
+export function clearCells(
+  doc: TableDoc,
+  rows: number[],
+  c0: number,
+  c1: number,
+): TableDoc {
+  const cols = doc.cols.slice();
+  for (let c = c0; c <= c1 && c < doc.nCols; c++) {
+    const col = (cols[c] ?? []).slice();
+    for (const r of rows) if (r < col.length) col[r] = "";
+    cols[c] = col;
+  }
+  return { ...doc, cols };
+}
+
 export function setColWidth(doc: TableDoc, c: number, width: number): TableDoc {
   const colWidths = doc.colWidths.slice();
   colWidths[c] = Math.max(40, Math.round(width));
   return { ...doc, colWidths };
+}
+
+export function setColType(doc: TableDoc, c: number, type: ColumnType | null): TableDoc {
+  const colTypes = doc.colTypes.slice();
+  colTypes[c] = type;
+  return { ...doc, colTypes };
+}
+
+export function setColFormat(doc: TableDoc, c: number, fmt: ColFormat | null): TableDoc {
+  const colFormats = (doc.colFormats ?? Array.from({ length: doc.nCols }, () => null)).slice();
+  colFormats[c] = fmt;
+  return { ...doc, colFormats };
+}
+
+export function getColFormat(doc: TableDoc, c: number): ColFormat | null {
+  return doc.colFormats?.[c] ?? null;
+}
+
+export function setFilters(doc: TableDoc, filters: ColumnFilter[]): TableDoc {
+  return { ...doc, filters: filters.length ? filters : undefined };
 }
 
 export function rowHeight(doc: TableDoc, r: number): number {
@@ -246,7 +289,9 @@ export function insertCols(doc: TableDoc, at: number, count = 1): TableDoc {
   cols.splice(a, 0, ...newCols);
   const colTypes = insertInto(doc.colTypes, a, count, null);
   const colWidths = insertInto(doc.colWidths, a, count, null);
-  return { ...doc, cols, colTypes, colWidths, nCols: doc.nCols + count };
+  const colFormats = doc.colFormats ? insertInto(doc.colFormats, a, count, null) : undefined;
+  // Column indices shift; drop filters rather than silently target wrong columns.
+  return { ...doc, cols, colTypes, colWidths, colFormats, filters: undefined, nCols: doc.nCols + count };
 }
 
 /** Delete `count` columns starting at index `at`. Keeps at least one column. */
@@ -254,15 +299,18 @@ export function deleteCols(doc: TableDoc, at: number, count = 1): TableDoc {
   const a = Math.max(0, Math.min(at, doc.nCols - 1));
   const n = Math.min(count, doc.nCols - a);
   if (doc.nCols - n < 1) {
-    return { ...doc, nCols: 1, cols: [[]], colTypes: [null], colWidths: [null] };
+    return { ...doc, nCols: 1, cols: [[]], colTypes: [null], colWidths: [null], colFormats: undefined, filters: undefined };
   }
   const cols = doc.cols.slice();
   cols.splice(a, n);
+  const splice = <T>(arr: T[]) => arr.slice(0, a).concat(arr.slice(a + n));
   return {
     ...doc,
     cols,
-    colTypes: doc.colTypes.slice(0, a).concat(doc.colTypes.slice(a + n)),
-    colWidths: doc.colWidths.slice(0, a).concat(doc.colWidths.slice(a + n)),
+    colTypes: splice(doc.colTypes),
+    colWidths: splice(doc.colWidths),
+    colFormats: doc.colFormats ? splice(doc.colFormats) : undefined,
+    filters: undefined,
     nCols: doc.nCols - n,
   };
 }

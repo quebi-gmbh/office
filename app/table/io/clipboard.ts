@@ -39,6 +39,25 @@ export function toHtmlTable(rows: string[][]): string {
   return `<table>${body}</table>`;
 }
 
+/** Copy a pre-built matrix of rows to the clipboard (TSV + HTML + fallback). */
+export async function copyMatrix(rows: string[][]): Promise<void> {
+  const tsv = toTSV(rows);
+  try {
+    if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          "text/plain": new Blob([tsv], { type: "text/plain" }),
+          "text/html": new Blob([toHtmlTable(rows)], { type: "text/html" }),
+        }),
+      ]);
+      return;
+    }
+  } catch {
+    /* fall through to plain text */
+  }
+  await navigator.clipboard.writeText(tsv);
+}
+
 /** Copy a range to the clipboard (TSV + HTML flavours, with a text fallback). */
 export async function copyRange(doc: TableDoc, rect: Rect): Promise<void> {
   const rows = rangeToRows(doc, rect);

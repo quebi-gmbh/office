@@ -6,18 +6,24 @@
  * `doc` + `selection` and reports edits back up so every mutation flows through
  * a single `apply()` choke-point (history + autosave).
  */
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Undo2, Redo2, FilePlus2, Upload, Search } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Undo2, Redo2, FilePlus2, Upload, Search, Settings } from "lucide-react";
 import {
   type TableDoc,
   type CellPos,
+  type ColumnType,
   createEmptyDoc,
   docFromRows,
   setCell,
   setBlock,
   clearRange,
+  clearCells,
   setColWidth,
   setRowHeight,
+  setColType,
+  setColFormat,
+  getColFormat,
+  setFilters,
   autoColWidth,
   ROW_HEIGHT,
   insertRows,
@@ -27,6 +33,21 @@ import {
   isEmptyDoc,
 } from "~/table/lib/model";
 import {
+  type ColFormat,
+  effectiveType,
+  formatValue,
+  isNumericType,
+  DEFAULT_FORMAT,
+} from "~/table/lib/coltypes";
+import { type SortKey, sortDoc } from "~/table/lib/sort";
+import { type ColumnFilter, computeView } from "~/table/lib/filter";
+import {
+  type TableSettings,
+  loadSettings,
+  saveSettings,
+  resolveLocale,
+} from "~/table/lib/settings";
+import {
   type Selection,
   type Rect,
   singleCell,
@@ -35,7 +56,8 @@ import {
 import { createHistory } from "~/table/lib/history";
 import { type FindOptions, replaceAll, replaceInValue } from "~/table/lib/find";
 import { createAutosaver, loadDoc } from "~/table/io/persist";
-import { copyRange } from "~/table/io/clipboard";
+import { copyMatrix } from "~/table/io/clipboard";
+import { getCell } from "~/table/lib/model";
 import {
   sourceFromFile,
   sourceFromText,
@@ -45,8 +67,10 @@ import {
 } from "~/table/io/import";
 import { DetectModal, type ImportSource } from "./DetectModal";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
+import { ColumnMenu } from "./ColumnMenu";
+import { SettingsDrawer } from "./SettingsDrawer";
 import { FindReplace } from "./FindReplace";
-import { Grid, type HeaderContextInfo } from "./Grid";
+import { Grid, type HeaderContextInfo, type ColBadge } from "./Grid";
 
 export function TableApp() {
   const [doc, setDoc] = useState<TableDoc>(() => createEmptyDoc());
@@ -57,7 +81,26 @@ export function TableApp() {
   const [isDragging, setDragging] = useState(false);
   const [headerCtx, setHeaderCtx] = useState<HeaderContextInfo | null>(null);
   const [findOpen, setFindOpen] = useState(false);
+  const [settings, setSettings] = useState<TableSettings>(() => loadSettings());
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [columnMenu, setColumnMenu] = useState<{ col: number; x: number; y: number } | null>(null);
+  const [sortSpec, setSortSpec] = useState<SortKey[]>([]);
   const [, force] = useState(0);
+
+  const locale = useMemo(() => resolveLocale(settings), [settings]);
+
+  // Effective type per column (override, else inferred). Drives display,
+  // alignment, sort, and filter.
+  const colTypes = useMemo<ColumnType[]>(
+    () => Array.from({ length: doc.nCols }, (_, c) => effectiveType(doc, c, locale)),
+    [doc, locale],
+  );
+
+  // Filter view: visible source rows, or null when no filter is active.
+  const view = useMemo(
+    () => computeView(doc, doc.filters ?? [], locale),
+    [doc, locale],
+  );
 
   const history = useRef(createHistory<TableDoc>(doc));
   const autosaver = useRef(createAutosaver((at) => setSavedAt(at)));
@@ -99,11 +142,20 @@ export function TableApp() {
     [doc, apply],
   );
 
+  // Map a DISPLAY-space row to its SOURCE row through the active filter view.
+  const srcRow = useCallback((r: number) => (view ? view[r] : r), [view]);
+
   const onClearRange = useCallback(
     (rect: Rect) => {
-      apply(clearRange(doc, rect.r0, rect.c0, rect.r1, rect.c1));
+      if (view) {
+        const rows: number[] = [];
+        for (let r = rect.r0; r <= rect.r1 && r < view.length; r++) rows.push(view[r]);
+        apply(clearCells(doc, rows, rect.c0, rect.c1));
+      } else {
+        apply(clearRange(doc, rect.r0, rect.c0, rect.r1, rect.c1));
+      }
     },
-    [doc, apply],
+    [doc, apply, view],
   );
 
   // Resize is applied live but kept out of the undo stack (a drag would
@@ -121,25 +173,34 @@ export function TableApp() {
     [doc, apply],
   );
 
-  // ── Copy / cut ─────────────────────────────────────────────────────────────
+  // ── Copy / cut (raw values, mapped through the filter view) ────────────────
+  const selectionMatrix = useCallback(() => {
+    const rect = rectOf(selection);
+    const rows: string[][] = [];
+    for (let r = rect.r0; r <= rect.r1; r++) {
+      const sr = srcRow(r);
+      const row: string[] = [];
+      for (let c = rect.c0; c <= rect.c1; c++) row.push(getCell(doc, sr, c));
+      rows.push(row);
+    }
+    return rows;
+  }, [doc, selection, srcRow]);
+
   const onCopy = useCallback(
     (e: React.ClipboardEvent) => {
       if (document.activeElement?.tagName === "INPUT") return;
       e.preventDefault();
-      void copyRange(doc, rectOf(selection));
+      void copyMatrix(selectionMatrix());
     },
-    [doc, selection],
+    [selectionMatrix],
   );
   const onCut = useCallback(
     (e: React.ClipboardEvent) => {
       if (document.activeElement?.tagName === "INPUT") return;
       e.preventDefault();
-      const rect = rectOf(selection);
-      void copyRange(doc, rect).then(() =>
-        apply(clearRange(doc, rect.r0, rect.c0, rect.r1, rect.c1)),
-      );
+      void copyMatrix(selectionMatrix()).then(() => onClearRange(rectOf(selection)));
     },
-    [doc, selection, apply],
+    [selectionMatrix, onClearRange, selection],
   );
 
   // ── Structural ops (each is a single undo step) ────────────────────────────
@@ -158,6 +219,51 @@ export function TableApp() {
   const doDeleteCols = useCallback(
     (at: number, count = 1) => apply(deleteCols(doc, at, count)),
     [doc, apply],
+  );
+
+  // ── Sort / type / format / filter ──────────────────────────────────────────
+  const applySort = useCallback(
+    (col: number, dir: "asc" | "desc", add: boolean) => {
+      const next: SortKey[] = add
+        ? [...sortSpec.filter((k) => k.col !== col), { col, dir }]
+        : [{ col, dir }];
+      setSortSpec(next);
+      apply(sortDoc(doc, next, locale));
+    },
+    [doc, apply, locale, sortSpec],
+  );
+  const clearSort = useCallback(() => setSortSpec([]), []);
+
+  const onSetType = useCallback(
+    (col: number, type: ColumnType | null) => apply(setColType(doc, col, type)),
+    [doc, apply],
+  );
+  const onSetFormat = useCallback(
+    (col: number, fmt: ColFormat | null) => apply(setColFormat(doc, col, fmt)),
+    [doc, apply],
+  );
+  const onSetFilter = useCallback(
+    (col: number, f: ColumnFilter | null) => {
+      const others = (doc.filters ?? []).filter((x) => x.col !== col);
+      apply(setFilters(doc, f ? [...others, f] : others));
+    },
+    [doc, apply],
+  );
+
+  // Display helpers passed to the grid.
+  const formatCell = useCallback(
+    (raw: string, c: number) =>
+      formatValue(raw, colTypes[c], getColFormat(doc, c) ?? DEFAULT_FORMAT, locale),
+    [colTypes, doc, locale],
+  );
+  const numericCol = useCallback((c: number) => isNumericType(colTypes[c]), [colTypes]);
+  const colBadge = useCallback(
+    (c: number): ColBadge | null => {
+      const sort = sortSpec.find((k) => k.col === c)?.dir;
+      const filtered = (doc.filters ?? []).some((f) => f.col === c);
+      return sort || filtered ? { sort, filtered } : null;
+    },
+    [sortSpec, doc.filters],
   );
 
   // ── Find & replace ─────────────────────────────────────────────────────────
@@ -216,6 +322,7 @@ export function TableApp() {
     const fresh = createEmptyDoc();
     setDoc(fresh);
     setSelection(singleCell(0, 0));
+    setSortSpec([]);
     history.current.reset(fresh);
     autosaver.current.schedule(fresh);
   }, []);
@@ -231,6 +338,7 @@ export function TableApp() {
       const fresh = docFromRows(rows, baseName, hasHeader);
       setDoc(fresh);
       setSelection(singleCell(0, 0));
+      setSortSpec([]);
       history.current.reset(fresh);
       autosaver.current.schedule(fresh);
     },
@@ -254,11 +362,11 @@ export function TableApp() {
         if (block && block.length && block.some((r) => r.length)) {
           e.preventDefault();
           const { r0, c0 } = rectOf(selection);
-          apply(setBlock(doc, r0, c0, block));
+          apply(setBlock(doc, srcRow(r0), c0, block));
         }
       }
     },
-    [doc, selection, apply],
+    [doc, selection, apply, srcRow],
   );
 
   // ── Drag & drop file / text import ─────────────────────────────────────────
@@ -329,9 +437,19 @@ export function TableApp() {
     ];
   }, [headerCtx, doInsertCols, doDeleteCols, doInsertRows, doDeleteRows, onAutoSizeCol, onRowHeight]);
 
-  const gotoMatch = useCallback((pos: CellPos) => {
-    setSelection(singleCell(pos.r, pos.c));
-  }, []);
+  // Find returns SOURCE positions; map back to a display row when filtered.
+  const gotoMatch = useCallback(
+    (pos: CellPos) => {
+      const dispR = view ? view.indexOf(pos.r) : pos.r;
+      if (dispR >= 0) setSelection(singleCell(dispR, pos.c));
+    },
+    [view],
+  );
+
+  // ── Persist settings ───────────────────────────────────────────────────────
+  useEffect(() => {
+    saveSettings(settings);
+  }, [settings]);
 
   // ── document.title ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -393,6 +511,9 @@ export function TableApp() {
           <button type="button" className={btn} onClick={() => setFindOpen(true)} title="Find & replace (Ctrl+F)">
             <Search size={12} /> Find
           </button>
+          <button type="button" className={btn} onClick={() => setSettingsOpen(true)} title="Settings">
+            <Settings size={12} /> Settings
+          </button>
         </div>
       </header>
 
@@ -423,6 +544,11 @@ export function TableApp() {
           onRowHeight={onRowHeight}
           onAutoSizeCol={onAutoSizeCol}
           onHeaderContext={setHeaderCtx}
+          viewRows={view}
+          formatCell={formatCell}
+          numericCol={numericCol}
+          onColumnMenu={(col, x, y) => setColumnMenu({ col, x, y })}
+          colBadge={colBadge}
         />
         {findOpen && (
           <FindReplace
@@ -474,6 +600,31 @@ export function TableApp() {
           onClose={() => setHeaderCtx(null)}
         />
       )}
+
+      {columnMenu && (
+        <ColumnMenu
+          col={columnMenu.col}
+          x={columnMenu.x}
+          y={columnMenu.y}
+          effectiveType={colTypes[columnMenu.col]}
+          override={doc.colTypes[columnMenu.col] ?? null}
+          format={getColFormat(doc, columnMenu.col)}
+          filter={(doc.filters ?? []).find((f) => f.col === columnMenu.col)}
+          onSort={(dir, add) => applySort(columnMenu.col, dir, add)}
+          onClearSort={clearSort}
+          onSetType={(t) => onSetType(columnMenu.col, t)}
+          onSetFormat={(f) => onSetFormat(columnMenu.col, f)}
+          onSetFilter={(f) => onSetFilter(columnMenu.col, f)}
+          onClose={() => setColumnMenu(null)}
+        />
+      )}
+
+      <SettingsDrawer
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        settings={settings}
+        onChange={setSettings}
+      />
     </section>
   );
 }
