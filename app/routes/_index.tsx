@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Code2, FileText, Paintbrush } from "lucide-react";
+import { Code2, FileText, Paintbrush, Table2 } from "lucide-react";
 import { Link } from "react-router";
 
 type Tool = {
@@ -31,6 +31,13 @@ const tools: Tool[] = [
     blurb: "A simple Paint-like drawing canvas.",
     status: "live",
     icon: <Paintbrush size={20} aria-hidden />,
+  },
+  {
+    to: "/table",
+    name: "Table",
+    blurb: "Paste anything tabular into a fast virtualised grid — edit, sort, filter, and export anywhere. All client-side.",
+    status: "live",
+    icon: <Table2 size={20} aria-hidden />,
   },
 ];
 
