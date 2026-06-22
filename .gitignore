@@ -3,3 +3,7 @@ dist
 app/routes.gen.ts
 *.log
 .DS_Store
+
+# local scratch
+.playwright-mcp/
+*.png

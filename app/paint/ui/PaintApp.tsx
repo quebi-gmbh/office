@@ -3,6 +3,7 @@
  * Wires together: engine, viewport, shortcuts, autosave, import/export, restore.
  */
 import { useCallback, useRef, useState, useEffect } from "react";
+import { flushSync } from "react-dom";
 import { usePaintEngine } from "~/paint/hooks/usePaintEngine";
 import { useShortcuts } from "~/paint/hooks/useShortcuts";
 import { useViewport } from "~/paint/hooks/useViewport";
@@ -242,7 +243,13 @@ export function PaintApp() {
     const canvas = document.querySelector<HTMLCanvasElement>(".paint-canvas-main");
     if (!canvas) return;
     const s = engine.store.getSnapshot();
-    engine.newDocument(bitmap.width, bitmap.height, s.doc.bgWasTransparent ? "transparent" : s.bg);
+    // newDocument changes state.doc.{width,height}, which drives the <canvas>
+    // width/height props. flushSync forces React to commit those attributes
+    // NOW — writing a canvas's width/height clears its bitmap, so if we drew
+    // before the commit React's re-render would wipe the image (blank paste).
+    flushSync(() => {
+      engine.newDocument(bitmap.width, bitmap.height, s.doc.bgWasTransparent ? "transparent" : s.bg);
+    });
     const freshCtx = canvas.getContext("2d")!;
     freshCtx.drawImage(bitmap, 0, 0);
     engine.store.setState((st) => ({ ...st, canUndo: false, canRedo: false }));
@@ -292,7 +299,11 @@ export function PaintApp() {
     if (!saved) return;
 
     const bitmap = await createImageBitmap(saved.png);
-    engine.newDocument(saved.doc.width, saved.doc.height, saved.doc.bgWasTransparent ? "transparent" : saved.bg);
+    // flushSync so React commits the new canvas dimensions before we draw;
+    // otherwise the re-render rewrites width/height and clears the bitmap.
+    flushSync(() => {
+      engine.newDocument(saved.doc.width, saved.doc.height, saved.doc.bgWasTransparent ? "transparent" : saved.bg);
+    });
     const canvas = document.querySelector<HTMLCanvasElement>(".paint-canvas-main");
     if (canvas) canvas.getContext("2d")!.drawImage(bitmap, 0, 0);
     engine.snapshotNow();
