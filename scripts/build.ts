@@ -54,6 +54,24 @@ if (!result.success) {
   process.exit(1);
 }
 
+// Build the /table compute Web Worker as a separate, fixed-name ES module so the
+// main thread can offload sort/group. Bun.build doesn't rewrite
+// `new Worker(new URL(...))` under the SPA bundle, so we emit it explicitly here
+// and reference "/assets/table-worker.js" at runtime (see app/table/io/compute.ts).
+const workerResult = await Bun.build({
+  entrypoints: [join(ROOT, "app/table/io/worker.ts")],
+  outdir: join(DIST, "assets"),
+  target: "browser",
+  format: "esm",
+  minify: true,
+  naming: { entry: "table-worker.js", chunk: "tw-[hash].[ext]", asset: "[name]-[hash].[ext]" },
+  define: { "process.env.NODE_ENV": JSON.stringify("production") },
+});
+if (!workerResult.success) {
+  for (const log of workerResult.logs) console.error(log);
+  process.exit(1);
+}
+
 const entry = result.outputs.find((o) => o.kind === "entry-point");
 if (!entry) throw new Error("bun build produced no entry-point output");
 const entryHref = "/" + relative(DIST, entry.path).replaceAll("\\", "/");
