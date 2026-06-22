@@ -12,6 +12,7 @@
  */
 import { type TableDoc, labelToCol } from "./model";
 import type { Workbook } from "./workbook";
+import { sparklineSvg, SVG_MARKER, type SparkType } from "./sparkline";
 
 export const CIRCULAR = "#CIRCULAR!";
 export const ERROR = "#ERROR!";
@@ -378,6 +379,15 @@ export class FormulaEngine {
       const branch = toBool(cond) ? n.args[1] : n.args[2];
       return branch ? this.evalNode(branch, si) : false;
     }
+    if (name === "SPARKLINE") {
+      const arg0 = n.args[0];
+      const vals = arg0?.k === "range" ? this.rangeValues(arg0, si) : [this.evalNode(arg0, si)];
+      if (isErr(vals)) return vals;
+      const nums = vals.filter((v) => !isErr(v)).map(toNum).filter((x) => Number.isFinite(x));
+      const typeArg = n.args[1] ? this.evalNode(n.args[1], si) : "line";
+      const type = (toStr(typeArg) === "bar" ? "bar" : "line") as SparkType;
+      return SVG_MARKER + sparklineSvg(nums, type);
+    }
     const vals = this.argValues(n.args, si);
     if (isErr(vals)) return vals;
     const nums = vals.filter((v) => !isErr(v)).map(toNum);
@@ -453,6 +463,74 @@ function looseEq(a: Result, b: Result): boolean {
 function cmp(a: Result, b: Result): number {
   if (typeof a === "number" || typeof b === "number") return toNum(a) - toNum(b);
   return toStr(a) < toStr(b) ? -1 : toStr(a) > toStr(b) ? 1 : 0;
+}
+
+/**
+ * Evaluate a standalone expression with a variable map (no cell refs). Used by
+ * custom conditional-format rules, e.g. `x > 100` with `{ x: <cell value> }`.
+ * Returns a boolean-ish Result, or a CellError on a bad expression.
+ */
+export function evaluateExpression(expr: string, vars: Record<string, CellValue>): Result {
+  let ast: Node;
+  try {
+    ast = new Parser(tokenize(expr)).parse();
+  } catch (e) {
+    return { error: ERROR, reason: (e as Error).message };
+  }
+  const ev = (n: Node): Result => {
+    switch (n.k) {
+      case "num": return n.v;
+      case "str": return n.v;
+      case "ref": {
+        const key = Object.keys(vars).find((k) => k.toLowerCase() === n.v.toLowerCase());
+        return key !== undefined ? vars[key] : { error: ERROR, reason: `Unknown ${n.v}` };
+      }
+      case "range": return { error: ERROR, reason: "No ranges in rule expression" };
+      case "unary": { const v = ev(n.e); if (isErr(v)) return v; return n.op === "-" ? -toNum(v) : toNum(v); }
+      case "bin": {
+        const l = ev(n.l); if (isErr(l)) return l;
+        const r = ev(n.r); if (isErr(r)) return r;
+        switch (n.op) {
+          case "+": return toNum(l) + toNum(r);
+          case "-": return toNum(l) - toNum(r);
+          case "*": return toNum(l) * toNum(r);
+          case "/": return toNum(r) === 0 ? { error: ERROR } : toNum(l) / toNum(r);
+          case "^": return Math.pow(toNum(l), toNum(r));
+          case "&": return toStr(l) + toStr(r);
+          case "=": return looseEq(l, r);
+          case "<>": return !looseEq(l, r);
+          case "<": return cmp(l, r) < 0;
+          case ">": return cmp(l, r) > 0;
+          case "<=": return cmp(l, r) <= 0;
+          case ">=": return cmp(l, r) >= 0;
+        }
+        return { error: ERROR };
+      }
+      case "call": {
+        const a = n.args.map(ev);
+        const bad = a.find(isErr);
+        if (bad) return bad;
+        switch (n.name) {
+          case "ABS": return Math.abs(toNum(a[0]));
+          case "ROUND": { const d = a[1] !== undefined ? toNum(a[1]) : 0; const f = 10 ** d; return Math.round(toNum(a[0]) * f) / f; }
+          case "LEN": return toStr(a[0]).length;
+          case "NOT": return !toBool(a[0]);
+          case "AND": return a.every(toBool);
+          case "OR": return a.some(toBool);
+          default: return { error: ERROR, reason: `Unknown ${n.name}` };
+        }
+      }
+    }
+  };
+  return ev(ast);
+}
+
+export function isError(v: Result): v is CellError {
+  return isErr(v);
+}
+
+export function toBoolean(v: Result): boolean {
+  return toBool(v);
 }
 
 export function resultToText(v: Result): string {
