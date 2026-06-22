@@ -8,6 +8,7 @@ import type { Editor } from "@tiptap/react";
 import { useToast } from "~/components/Toast";
 import {
   openDocument,
+  openMarkdownFile,
   importMarkdown,
   importHtml,
   importDocx,
@@ -27,6 +28,7 @@ import type { DocSettings } from "./settings";
 
 export type FileMenuAction =
   | "open"
+  | "import-md"
   | "import-docx"
   | "save-md"
   | "export-html"
@@ -64,6 +66,7 @@ type MenuItem = {
 
 const ITEMS: MenuItem[] = [
   { label: "Open…",                  action: "open",             shortcut: "Ctrl+O" },
+  { label: "Import Markdown…",       action: "import-md" },
   { label: "Import Word (.docx)…",   action: "import-docx" },
   { label: "New from template…",     action: "new-from-template", separator: true },
   { label: "Save as Markdown",       action: "save-md",          shortcut: "Ctrl+S" },
@@ -122,6 +125,16 @@ export function FileMenu({
         } else {
           editor.commands.setContent(`<p>${result.text}</p>`);
         }
+        onImported();
+        break;
+      }
+      case "import-md": {
+        if (dirty) {
+          if (!confirm("You have unsaved changes. Discard and import a Markdown file?")) return;
+        }
+        const result = await openMarkdownFile();
+        if (!result) return;
+        await importMarkdown(editor, result.text);
         onImported();
         break;
       }

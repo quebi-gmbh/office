@@ -104,23 +104,132 @@ export async function openDocument(): Promise<OpenResult | null> {
   });
 }
 
+/**
+ * Open a Markdown file from disk (`.md` / `.markdown` / `.txt`).
+ * Mirrors openDocument but scopes the picker to Markdown.
+ */
+export async function openMarkdownFile(): Promise<OpenResult | null> {
+  if (typeof window !== "undefined" && "showOpenFilePicker" in window) {
+    try {
+      const [handle] = await (
+        window as Window & {
+          showOpenFilePicker: (opts?: unknown) => Promise<FileSystemFileHandle[]>;
+        }
+      ).showOpenFilePicker({
+        types: [
+          {
+            description: "Markdown files",
+            accept: { "text/markdown": [".md", ".markdown"], "text/plain": [".txt"] },
+          },
+        ],
+        multiple: false,
+      });
+      const file = await handle.getFile();
+      return { name: file.name, text: await file.text(), handle };
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return null;
+      // FSA failed — fall through to input fallback
+    }
+  }
+
+  return new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".md,.markdown,.txt,text/markdown";
+    input.onchange = () => {
+      const file = input.files?.[0];
+      if (!file) { resolve(null); return; }
+      const reader = new FileReader();
+      reader.onload = () => resolve({ name: file.name, text: reader.result as string });
+      reader.onerror = () => resolve(null);
+      reader.readAsText(file);
+    };
+    input.oncancel = () => resolve(null);
+    input.click();
+  });
+}
+
 // ── Import ────────────────────────────────────────────────────────────────────
 
 /**
- * Convert Markdown text to sanitized HTML, then load it into the editor.
- * Both `marked` and `dompurify` are lazy-loaded.
+ * Convert Markdown text to sanitized HTML. Both `marked` and `dompurify` are
+ * lazy-loaded so they stay out of the initial bundle.
  */
-export async function importMarkdown(
-  editor: Editor,
-  markdown: string,
-): Promise<void> {
+export async function markdownToHtml(markdown: string): Promise<string> {
   const [{ marked }, { default: DOMPurify }] = await Promise.all([
     import("marked"),
     import("dompurify"),
   ]);
   const rawHtml = await marked(markdown);
-  const clean = DOMPurify.sanitize(rawHtml);
-  editor.commands.setContent(clean);
+  return DOMPurify.sanitize(rawHtml);
+}
+
+/**
+ * Convert Markdown text to sanitized HTML, then load it into the editor,
+ * replacing the current document.
+ */
+export async function importMarkdown(
+  editor: Editor,
+  markdown: string,
+): Promise<void> {
+  editor.commands.setContent(await markdownToHtml(markdown));
+}
+
+/**
+ * Convert Markdown and insert it at the given position (or the current
+ * selection when no position is given) without replacing the document.
+ * Used by drag-drop of `.md` files / text and by markdown-aware paste.
+ */
+export async function insertMarkdown(
+  editor: Editor,
+  markdown: string,
+  pos?: number,
+): Promise<void> {
+  const html = await markdownToHtml(markdown);
+  if (pos == null) {
+    editor.chain().focus().insertContent(html).run();
+  } else {
+    editor.chain().focus().insertContentAt(pos, html).run();
+  }
+}
+
+/**
+ * Heuristic: does this text look like Markdown worth importing?
+ *
+ * Pure and side-effect free so it can be unit-tested and used in hot paste/drop
+ * paths. Conservative on purpose — plain prose should fall through to the host's
+ * default paste behaviour. Returns true when at least one reasonably strong
+ * Markdown signal is present.
+ */
+export function looksLikeMarkdown(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+
+  // Strong, unambiguous block-level signals — any single one is enough.
+  const strong: RegExp[] = [
+    /^#{1,6}\s+\S/m, // ATX heading: "# Title"
+    /^```|^~~~/m, // fenced code block
+    /^\s{0,3}>\s+\S/m, // blockquote
+    /^\s*\|.+\|\s*$\n^\s*\|?[\s:|-]+\|?\s*$/m, // pipe table with separator row
+    /^[^\n]+\n[=-]{3,}\s*$/m, // setext heading underline
+    /!\[[^\]]*\]\([^)]+\)/, // image
+    /^\s*[-*+]\s+\S.*\n\s*[-*+]\s+\S/m, // ≥2 consecutive unordered list items
+    /^\s*\d+\.\s+\S.*\n\s*\d+\.\s+\S/m, // ≥2 consecutive ordered list items
+  ];
+  if (strong.some((re) => re.test(t))) return true;
+
+  // Weaker signals — require at least two distinct kinds to avoid false hits on
+  // ordinary prose that happens to contain, say, a single asterisk.
+  const weak: RegExp[] = [
+    /^\s*[-*+]\s+\S/m, // unordered list item
+    /^\s*\d+\.\s+\S/m, // ordered list item
+    /\[[^\]]+\]\([^)]+\)/, // inline link
+    /(\*\*|__)(?=\S)[\s\S]+?\S\1/, // bold
+    /(?:^|\s)(\*|_)(?=\S)[^*_\n]+?\S\1(?:\s|$)/, // emphasis
+    /`[^`\n]+`/, // inline code
+    /^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/m, // thematic break
+  ];
+  return weak.filter((re) => re.test(t)).length >= 2;
 }
 
 /**

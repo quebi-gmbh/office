@@ -31,6 +31,7 @@ export function allDocCommands(): DocCommand[] {
   return [
     // ── File ──────────────────────────────────────────────────────────────────
     { id: "file-open",        title: "Open file…",          group: "File", shortcut: "Ctrl+O",       run: (c) => c.fileAction("open") },
+    { id: "file-import-md",   title: "Import Markdown…",    group: "File",                            run: (c) => c.fileAction("import-md") },
     { id: "file-save-md",     title: "Save as Markdown",    group: "File", shortcut: "Ctrl+S",       run: (c) => c.fileAction("save-md") },
     { id: "file-export-html", title: "Export as HTML",      group: "File",                            run: (c) => c.fileAction("export-html") },
     { id: "file-export-docx", title: "Export as .docx",     group: "File",                            run: (c) => c.fileAction("export-docx") },
