@@ -7,7 +7,7 @@
  * a single `apply()` choke-point (history + autosave).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Undo2, Redo2, FilePlus2, Upload, Search, Settings } from "lucide-react";
+import { Undo2, Redo2, FilePlus2, Upload, Search, Settings, Download, Copy } from "lucide-react";
 import {
   type TableDoc,
   type CellPos,
@@ -58,6 +58,10 @@ import { type FindOptions, replaceAll, replaceInValue } from "~/table/lib/find";
 import { createAutosaver, loadDoc } from "~/table/io/persist";
 import { copyMatrix } from "~/table/io/clipboard";
 import { getCell } from "~/table/lib/model";
+import { type ExportCtx, EXPORT_TARGETS } from "~/table/io/export";
+import { downloadText, downloadBlob, safeFilename } from "~/table/io/download";
+import { streamParse, STREAM_THRESHOLD } from "~/table/io/stream";
+import { useToast } from "~/components/Toast";
 import {
   sourceFromFile,
   sourceFromText,
@@ -70,6 +74,8 @@ import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { ColumnMenu } from "./ColumnMenu";
 import { SettingsDrawer } from "./SettingsDrawer";
 import { FindReplace } from "./FindReplace";
+import { ExportMenu } from "./ExportMenu";
+import { CommandPalette, type TableCommandCtx } from "./CommandPalette";
 import { Grid, type HeaderContextInfo, type ColBadge } from "./Grid";
 
 export function TableApp() {
@@ -85,7 +91,10 @@ export function TableApp() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [columnMenu, setColumnMenu] = useState<{ col: number; x: number; y: number } | null>(null);
   const [sortSpec, setSortSpec] = useState<SortKey[]>([]);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [progress, setProgress] = useState<string | null>(null);
   const [, force] = useState(0);
+  const { show: showToast, ToastContainer } = useToast();
 
   const locale = useMemo(() => resolveLocale(settings), [settings]);
 
@@ -123,6 +132,32 @@ export function TableApp() {
       saver.stop();
     };
   }, []);
+
+  // ── Streaming import for big delimited files ───────────────────────────────
+  const streamImport = useCallback(
+    async (file: File) => {
+      setProgress(`Parsing ${file.name}…`);
+      try {
+        const fresh = await streamParse(file, {
+          onProgress: (p) =>
+            setProgress(
+              `Parsing ${file.name}: ${p.rows.toLocaleString()} rows` +
+                (p.total ? ` (${Math.round((p.bytes / p.total) * 100)}%)` : ""),
+            ),
+        });
+        setDoc(fresh);
+        setSelection(singleCell(0, 0));
+        setSortSpec([]);
+        history.current.reset(fresh);
+        autosaver.current.schedule(fresh);
+        showToast(`Imported ${fresh.nRows.toLocaleString()} rows from ${file.name}`);
+      } catch (e) {
+        showToast(`Parse failed: ${(e as Error).message}`, "error");
+      }
+      setProgress(null);
+    },
+    [showToast],
+  );
 
   // ── Central mutation choke-point ───────────────────────────────────────────
   const apply = useCallback(
@@ -266,6 +301,35 @@ export function TableApp() {
     [sortSpec, doc.filters],
   );
 
+  // ── Export (Download as… / Copy as…) ───────────────────────────────────────
+  const handleExport = useCallback(
+    async (targetId: string, mode: "download" | "copy") => {
+      const target = EXPORT_TARGETS.find((t) => t.id === targetId);
+      if (!target) return;
+      const ctx: ExportCtx = {
+        doc,
+        types: colTypes,
+        formats: Array.from({ length: doc.nCols }, (_, c) => getColFormat(doc, c)),
+        locale,
+      };
+      try {
+        if (mode === "download") {
+          if (target.binary && target.toBlob) {
+            downloadBlob(await target.toBlob(ctx), safeFilename(doc.name, target.ext));
+          } else if (target.toText) {
+            downloadText(target.toText(ctx), safeFilename(doc.name, target.ext), target.mime);
+          }
+        } else if (target.toText) {
+          await navigator.clipboard.writeText(target.toText(ctx));
+          showToast(`Copied as ${target.label}`);
+        }
+      } catch (e) {
+        showToast(`Export failed: ${(e as Error).message}`, "error");
+      }
+    },
+    [doc, colTypes, locale, showToast],
+  );
+
   // ── Find & replace ─────────────────────────────────────────────────────────
   const onReplaceOne = useCallback(
     (pos: CellPos, query: string, opts: FindOptions, replacement: string) => {
@@ -308,6 +372,10 @@ export function TableApp() {
     input.onchange = async () => {
       const file = input.files?.[0];
       if (!file) return;
+      if (/\.(csv|tsv|txt)$/i.test(file.name) && file.size > STREAM_THRESHOLD) {
+        await streamImport(file);
+        return;
+      }
       try {
         setImportSource(await sourceFromFile(file));
       } catch {
@@ -315,7 +383,7 @@ export function TableApp() {
       }
     };
     input.click();
-  }, []);
+  }, [streamImport]);
 
   const newDoc = useCallback(() => {
     if (!confirm("Start a new, empty table? Your current table will be cleared.")) return;
@@ -379,6 +447,13 @@ export function TableApp() {
       if (file) {
         if (!isImportableFile(file.name) && !file.type.startsWith("text/")) return;
         if (!isEmptyDoc(doc) && !confirm("Replace the current table with the dropped file?")) return;
+        // Big delimited files → stream parse (responsive, page-by-page, progress).
+        const lower = file.name.toLowerCase();
+        const delimited = /\.(csv|tsv|txt)$/.test(lower);
+        if (delimited && file.size > STREAM_THRESHOLD) {
+          await streamImport(file);
+          return;
+        }
         try {
           setImportSource(await sourceFromFile(file));
         } catch {
@@ -410,11 +485,26 @@ export function TableApp() {
       } else if (k === "f") {
         e.preventDefault();
         setFindOpen(true);
+      } else if (e.shiftKey && k === "p") {
+        e.preventDefault();
+        setPaletteOpen(true);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [undo, redo]);
+
+  // ── Command-palette context ────────────────────────────────────────────────
+  const paletteCtx: TableCommandCtx = {
+    exportTo: (id, mode) => void handleExport(id, mode),
+    sortActive: (dir) => applySort(rectOf(selection).c0, dir, false),
+    openFind: () => setFindOpen(true),
+    openSettings: () => setSettingsOpen(true),
+    newDoc,
+    importFile: openFilePicker,
+    insertRow: () => doInsertRows(srcRow(rectOf(selection).r0) + 1),
+    insertCol: () => doInsertCols(rectOf(selection).c0 + 1),
+  };
 
   // ── Header context-menu items ──────────────────────────────────────────────
   const headerMenuItems = useCallback((): MenuItem[] => {
@@ -511,6 +601,18 @@ export function TableApp() {
           <button type="button" className={btn} onClick={() => setFindOpen(true)} title="Find & replace (Ctrl+F)">
             <Search size={12} /> Find
           </button>
+          <ExportMenu
+            mode="download"
+            label="Download"
+            icon={<Download size={12} />}
+            onPick={(id) => void handleExport(id, "download")}
+          />
+          <ExportMenu
+            mode="copy"
+            label="Copy"
+            icon={<Copy size={12} />}
+            onPick={(id) => void handleExport(id, "copy")}
+          />
           <button type="button" className={btn} onClick={() => setSettingsOpen(true)} title="Settings">
             <Settings size={12} /> Settings
           </button>
@@ -625,6 +727,16 @@ export function TableApp() {
         settings={settings}
         onChange={setSettings}
       />
+
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} ctx={paletteCtx} />
+
+      {progress && (
+        <div className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-full border border-accent/40 bg-card px-4 py-2 text-xs text-fg shadow-lg">
+          {progress}
+        </div>
+      )}
+
+      <ToastContainer />
     </section>
   );
 }
