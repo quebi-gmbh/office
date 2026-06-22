@@ -7,15 +7,23 @@
  * a single `apply()` choke-point (history + autosave).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Undo2, Redo2, FilePlus2, Upload } from "lucide-react";
+import { Undo2, Redo2, FilePlus2, Upload, Search } from "lucide-react";
 import {
   type TableDoc,
+  type CellPos,
   createEmptyDoc,
   docFromRows,
   setCell,
   setBlock,
   clearRange,
   setColWidth,
+  setRowHeight,
+  autoColWidth,
+  ROW_HEIGHT,
+  insertRows,
+  deleteRows,
+  insertCols,
+  deleteCols,
   isEmptyDoc,
 } from "~/table/lib/model";
 import {
@@ -25,7 +33,9 @@ import {
   rectOf,
 } from "~/table/lib/selection";
 import { createHistory } from "~/table/lib/history";
+import { type FindOptions, replaceAll, replaceInValue } from "~/table/lib/find";
 import { createAutosaver, loadDoc } from "~/table/io/persist";
+import { copyRange } from "~/table/io/clipboard";
 import {
   sourceFromFile,
   sourceFromText,
@@ -34,7 +44,9 @@ import {
   isImportableFile,
 } from "~/table/io/import";
 import { DetectModal, type ImportSource } from "./DetectModal";
-import { Grid } from "./Grid";
+import { ContextMenu, type MenuItem } from "./ContextMenu";
+import { FindReplace } from "./FindReplace";
+import { Grid, type HeaderContextInfo } from "./Grid";
 
 export function TableApp() {
   const [doc, setDoc] = useState<TableDoc>(() => createEmptyDoc());
@@ -43,6 +55,8 @@ export function TableApp() {
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [importSource, setImportSource] = useState<ImportSource | null>(null);
   const [isDragging, setDragging] = useState(false);
+  const [headerCtx, setHeaderCtx] = useState<HeaderContextInfo | null>(null);
+  const [findOpen, setFindOpen] = useState(false);
   const [, force] = useState(0);
 
   const history = useRef(createHistory<TableDoc>(doc));
@@ -92,11 +106,73 @@ export function TableApp() {
     [doc, apply],
   );
 
-  // Column resize is applied live but kept out of the undo stack (matches the
-  // baseline-editing scope; structural resize lands in phase 1.3).
+  // Resize is applied live but kept out of the undo stack (a drag would
+  // otherwise flood it); the final size still autosaves.
   const onColWidth = useCallback(
-    (c: number, width: number) => {
-      apply(setColWidth(doc, c, width), { history: false });
+    (c: number, width: number) => apply(setColWidth(doc, c, width), { history: false }),
+    [doc, apply],
+  );
+  const onRowHeight = useCallback(
+    (r: number, height: number) => apply(setRowHeight(doc, r, height), { history: false }),
+    [doc, apply],
+  );
+  const onAutoSizeCol = useCallback(
+    (c: number) => apply(setColWidth(doc, c, autoColWidth(doc, c)), { history: false }),
+    [doc, apply],
+  );
+
+  // ── Copy / cut ─────────────────────────────────────────────────────────────
+  const onCopy = useCallback(
+    (e: React.ClipboardEvent) => {
+      if (document.activeElement?.tagName === "INPUT") return;
+      e.preventDefault();
+      void copyRange(doc, rectOf(selection));
+    },
+    [doc, selection],
+  );
+  const onCut = useCallback(
+    (e: React.ClipboardEvent) => {
+      if (document.activeElement?.tagName === "INPUT") return;
+      e.preventDefault();
+      const rect = rectOf(selection);
+      void copyRange(doc, rect).then(() =>
+        apply(clearRange(doc, rect.r0, rect.c0, rect.r1, rect.c1)),
+      );
+    },
+    [doc, selection, apply],
+  );
+
+  // ── Structural ops (each is a single undo step) ────────────────────────────
+  const doInsertRows = useCallback(
+    (at: number, count = 1) => apply(insertRows(doc, at, count)),
+    [doc, apply],
+  );
+  const doDeleteRows = useCallback(
+    (at: number, count = 1) => apply(deleteRows(doc, at, count)),
+    [doc, apply],
+  );
+  const doInsertCols = useCallback(
+    (at: number, count = 1) => apply(insertCols(doc, at, count)),
+    [doc, apply],
+  );
+  const doDeleteCols = useCallback(
+    (at: number, count = 1) => apply(deleteCols(doc, at, count)),
+    [doc, apply],
+  );
+
+  // ── Find & replace ─────────────────────────────────────────────────────────
+  const onReplaceOne = useCallback(
+    (pos: CellPos, query: string, opts: FindOptions, replacement: string) => {
+      const v = doc.cols[pos.c]?.[pos.r] ?? "";
+      apply(setCell(doc, pos.r, pos.c, replaceInValue(v, query, replacement, opts)));
+    },
+    [doc, apply],
+  );
+  const onReplaceAll = useCallback(
+    (query: string, replacement: string, opts: FindOptions): number => {
+      const { doc: next, count } = replaceAll(doc, query, replacement, opts);
+      if (count) apply(next);
+      return count;
     },
     [doc, apply],
   );
@@ -223,11 +299,39 @@ export function TableApp() {
       } else if ((k === "z" && e.shiftKey) || k === "y") {
         e.preventDefault();
         redo();
+      } else if (k === "f") {
+        e.preventDefault();
+        setFindOpen(true);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [undo, redo]);
+
+  // ── Header context-menu items ──────────────────────────────────────────────
+  const headerMenuItems = useCallback((): MenuItem[] => {
+    if (!headerCtx) return [];
+    if (headerCtx.kind === "col") {
+      const c = headerCtx.index;
+      return [
+        { label: "Insert column left", onClick: () => doInsertCols(c) },
+        { label: "Insert column right", onClick: () => doInsertCols(c + 1) },
+        { label: "Auto-size column", onClick: () => onAutoSizeCol(c) },
+        { label: "Delete column", onClick: () => doDeleteCols(c), separator: true, danger: true },
+      ];
+    }
+    const r = headerCtx.index;
+    return [
+      { label: "Insert row above", onClick: () => doInsertRows(r) },
+      { label: "Insert row below", onClick: () => doInsertRows(r + 1) },
+      { label: "Reset row height", onClick: () => onRowHeight(r, ROW_HEIGHT) },
+      { label: "Delete row", onClick: () => doDeleteRows(r), separator: true, danger: true },
+    ];
+  }, [headerCtx, doInsertCols, doDeleteCols, doInsertRows, doDeleteRows, onAutoSizeCol, onRowHeight]);
+
+  const gotoMatch = useCallback((pos: CellPos) => {
+    setSelection(singleCell(pos.r, pos.c));
+  }, []);
 
   // ── document.title ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -286,15 +390,20 @@ export function TableApp() {
           >
             <Redo2 size={12} /> Redo
           </button>
+          <button type="button" className={btn} onClick={() => setFindOpen(true)} title="Find & replace (Ctrl+F)">
+            <Search size={12} /> Find
+          </button>
         </div>
       </header>
 
-      {/* Grid (drop target + paste root) */}
+      {/* Grid (drop target + paste/copy/cut root) */}
       <div
         className={`relative min-h-0 flex-1 overflow-hidden rounded-xl border ${
           isDragging ? "border-accent" : "border-border"
         }`}
         onPaste={onPaste}
+        onCopy={onCopy}
+        onCut={onCut}
         onDrop={onDrop}
         onDragOver={(e) => {
           e.preventDefault();
@@ -311,7 +420,20 @@ export function TableApp() {
           onCommitCell={onCommitCell}
           onClearRange={onClearRange}
           onColWidth={onColWidth}
+          onRowHeight={onRowHeight}
+          onAutoSizeCol={onAutoSizeCol}
+          onHeaderContext={setHeaderCtx}
         />
+        {findOpen && (
+          <FindReplace
+            doc={doc}
+            selectionRect={rectOf(selection)}
+            onClose={() => setFindOpen(false)}
+            onGoto={gotoMatch}
+            onReplaceOne={onReplaceOne}
+            onReplaceAll={onReplaceAll}
+          />
+        )}
         {isDragging && (
           <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center bg-bg/70 text-sm text-accent">
             Drop a CSV / TSV / JSON / XLSX / HTML / Markdown file to import
@@ -341,6 +463,15 @@ export function TableApp() {
           source={importSource}
           onCommit={commitImport}
           onCancel={() => setImportSource(null)}
+        />
+      )}
+
+      {headerCtx && (
+        <ContextMenu
+          x={headerCtx.x}
+          y={headerCtx.y}
+          items={headerMenuItems()}
+          onClose={() => setHeaderCtx(null)}
         />
       )}
     </section>
