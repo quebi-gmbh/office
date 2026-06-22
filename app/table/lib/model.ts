@@ -37,6 +37,9 @@ export interface TableDoc {
   colTypes: (ColumnType | null)[];
   /** Per-column width in px; null = default width. */
   colWidths: (number | null)[];
+  /** Per-row height in px; null/absent = default ROW_HEIGHT. Sparse: only
+   *  resized rows need an entry. */
+  rowHeights?: (number | null)[];
   /** Whether row 0 holds column labels (used by type inference + export). */
   hasHeader?: boolean;
 }
@@ -180,6 +183,106 @@ export function setColWidth(doc: TableDoc, c: number, width: number): TableDoc {
   const colWidths = doc.colWidths.slice();
   colWidths[c] = Math.max(40, Math.round(width));
   return { ...doc, colWidths };
+}
+
+export function rowHeight(doc: TableDoc, r: number): number {
+  return doc.rowHeights?.[r] ?? ROW_HEIGHT;
+}
+
+export function setRowHeight(doc: TableDoc, r: number, height: number): TableDoc {
+  const rowHeights = (doc.rowHeights ?? []).slice();
+  rowHeights[r] = Math.max(18, Math.round(height));
+  return { ...doc, rowHeights };
+}
+
+// ── Structural ops (insert / delete rows & columns) ───────────────────────────
+
+/** Insert `count` blank rows before index `at` (clamped to [0, nRows]). */
+export function insertRows(doc: TableDoc, at: number, count = 1): TableDoc {
+  const a = Math.max(0, Math.min(at, doc.nRows));
+  const blanks = () => Array.from({ length: count }, () => "");
+  const cols = doc.cols.map((col) => {
+    const c = col.slice();
+    while (c.length < a) c.push("");
+    c.splice(a, 0, ...blanks());
+    return c;
+  });
+  const rowHeights = doc.rowHeights
+    ? insertInto(doc.rowHeights, a, count, null)
+    : undefined;
+  return { ...doc, cols, nRows: doc.nRows + count, rowHeights };
+}
+
+/** Delete `count` rows starting at index `at`. Keeps at least one row. */
+export function deleteRows(doc: TableDoc, at: number, count = 1): TableDoc {
+  const a = Math.max(0, Math.min(at, doc.nRows - 1));
+  const n = Math.min(count, doc.nRows - a);
+  if (doc.nRows - n < 1) return clearAllRows(doc); // never go to zero rows
+  const cols = doc.cols.map((col) => {
+    const c = col.slice();
+    c.splice(a, n);
+    return c;
+  });
+  const rowHeights = doc.rowHeights
+    ? doc.rowHeights.slice(0, a).concat(doc.rowHeights.slice(a + n))
+    : undefined;
+  return { ...doc, cols, nRows: doc.nRows - n, rowHeights };
+}
+
+function clearAllRows(doc: TableDoc): TableDoc {
+  return {
+    ...doc,
+    nRows: 1,
+    cols: doc.cols.map(() => [""]),
+    rowHeights: undefined,
+  };
+}
+
+/** Insert `count` blank columns before index `at`. */
+export function insertCols(doc: TableDoc, at: number, count = 1): TableDoc {
+  const a = Math.max(0, Math.min(at, doc.nCols));
+  const newCols = Array.from({ length: count }, () => [] as string[]);
+  const cols = doc.cols.slice();
+  cols.splice(a, 0, ...newCols);
+  const colTypes = insertInto(doc.colTypes, a, count, null);
+  const colWidths = insertInto(doc.colWidths, a, count, null);
+  return { ...doc, cols, colTypes, colWidths, nCols: doc.nCols + count };
+}
+
+/** Delete `count` columns starting at index `at`. Keeps at least one column. */
+export function deleteCols(doc: TableDoc, at: number, count = 1): TableDoc {
+  const a = Math.max(0, Math.min(at, doc.nCols - 1));
+  const n = Math.min(count, doc.nCols - a);
+  if (doc.nCols - n < 1) {
+    return { ...doc, nCols: 1, cols: [[]], colTypes: [null], colWidths: [null] };
+  }
+  const cols = doc.cols.slice();
+  cols.splice(a, n);
+  return {
+    ...doc,
+    cols,
+    colTypes: doc.colTypes.slice(0, a).concat(doc.colTypes.slice(a + n)),
+    colWidths: doc.colWidths.slice(0, a).concat(doc.colWidths.slice(a + n)),
+    nCols: doc.nCols - n,
+  };
+}
+
+function insertInto<T>(arr: T[], at: number, count: number, fill: T): T[] {
+  const out = arr.slice();
+  while (out.length < at) out.push(fill);
+  out.splice(at, 0, ...Array.from({ length: count }, () => fill));
+  return out;
+}
+
+/** Width that fits the longest value in a column (rough char-width estimate). */
+export function autoColWidth(doc: TableDoc, c: number): number {
+  let max = 0;
+  const col = doc.cols[c] ?? [];
+  for (let r = 0; r < doc.nRows; r++) {
+    const len = (col[r] ?? "").length;
+    if (len > max) max = len;
+  }
+  return Math.max(60, Math.min(480, max * 8 + 20));
 }
 
 /** Grow the doc (never shrinks) so it has at least minRows × minCols. */
