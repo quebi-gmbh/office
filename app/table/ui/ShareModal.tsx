@@ -7,12 +7,19 @@ import { useState } from "react";
 interface ShareModalProps {
   onClose: () => void;
   onCopyLink: () => void;
+  /**
+   * True once the share URL has been pre-computed and is sitting in memory,
+   * ready for a synchronous clipboard write from inside the click handler.
+   * The button stays disabled until then so the click never races the
+   * user-activation window — see issue #83.
+   */
+  copyLinkReady: boolean;
   onLoadUrl: (url: string) => void;
   onOpenInCode: (format: "csv" | "json" | "python") => void;
   onExportPng: () => void;
 }
 
-export function ShareModal({ onClose, onCopyLink, onLoadUrl, onOpenInCode, onExportPng }: ShareModalProps) {
+export function ShareModal({ onClose, onCopyLink, copyLinkReady, onLoadUrl, onOpenInCode, onExportPng }: ShareModalProps) {
   const [url, setUrl] = useState("");
   const btn = "rounded border border-border bg-card px-2 py-1 text-xs hover:border-accent";
 
@@ -23,8 +30,13 @@ export function ShareModal({ onClose, onCopyLink, onLoadUrl, onOpenInCode, onExp
 
         <section className="mb-4">
           <p className="mb-1 text-xs text-muted">Share by URL</p>
-          <button type="button" onClick={onCopyLink} className="rounded border border-accent bg-accent/20 px-3 py-1.5 text-xs text-accent hover:bg-accent/30">
-            Copy share link
+          <button
+            type="button"
+            onClick={onCopyLink}
+            disabled={!copyLinkReady}
+            className="rounded border border-accent bg-accent/20 px-3 py-1.5 text-xs text-accent hover:bg-accent/30 disabled:opacity-50"
+          >
+            {copyLinkReady ? "Copy share link" : "Preparing link…"}
           </button>
           <p className="mt-1 text-[11px] text-muted">The whole workbook is compressed into the link (best for small docs).</p>
         </section>
