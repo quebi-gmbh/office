@@ -139,6 +139,7 @@ export function TableApp() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [insightOpen, setInsightOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [shareLink, setShareLink] = useState<{ url: string; oversized: boolean } | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
   const editsSinceSnapshot = useRef(0);
@@ -554,11 +555,41 @@ export function TableApp() {
   );
 
   // ── Sharing / history (phase 2.5) ──────────────────────────────────────────
-  const doShare = useCallback(async () => {
-    const { url, oversized } = await shareUrl(workbook);
-    await navigator.clipboard.writeText(url);
-    showToast(oversized ? "Link copied — large doc may exceed URL limits" : "Share link copied");
-  }, [workbook, showToast]);
+  //
+  // The share URL is pre-computed in an effect while the modal is open (see
+  // below), so the click handler can call `clipboard.writeText` synchronously
+  // inside the click's transient user-activation window. Awaiting the gzip
+  // pipeline before `writeText` would let activation expire and the browser
+  // would silently reject the write with NotAllowedError. See issue #83.
+  const doShare = useCallback(() => {
+    if (!shareLink) return; // button is disabled until the URL is ready
+    const { url, oversized } = shareLink;
+    navigator.clipboard.writeText(url).then(
+      () => showToast(oversized ? "Link copied — large doc may exceed URL limits" : "Share link copied"),
+      (e: unknown) => showToast(`Copy failed: ${(e as Error).message}`, "error"),
+    );
+  }, [shareLink, showToast]);
+
+  // Pre-compute the share URL whenever the modal is open and the workbook
+  // changes. Keeps the URL synchronously available to the click handler.
+  useEffect(() => {
+    if (!shareOpen) {
+      setShareLink(null);
+      return;
+    }
+    let cancelled = false;
+    shareUrl(workbook).then(
+      (result) => {
+        if (!cancelled) setShareLink(result);
+      },
+      (e: unknown) => {
+        if (!cancelled) showToast(`Share link failed: ${(e as Error).message}`, "error");
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [shareOpen, workbook, showToast]);
 
   const doLoadUrl = useCallback(
     async (url: string) => {
@@ -1115,7 +1146,8 @@ export function TableApp() {
       {shareOpen && (
         <ShareModal
           onClose={() => setShareOpen(false)}
-          onCopyLink={() => void doShare()}
+          onCopyLink={doShare}
+          copyLinkReady={shareLink !== null}
           onLoadUrl={(url) => void doLoadUrl(url)}
           onOpenInCode={doOpenInCode}
           onExportPng={() => void doExportPng()}
