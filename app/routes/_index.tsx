@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Code2, FileText, Paintbrush, Table2 } from "lucide-react";
+import { Code2, FileText, FileType, Paintbrush, Table2 } from "lucide-react";
 import { Link } from "react-router";
 
 type Tool = {
@@ -38,6 +38,13 @@ const tools: Tool[] = [
     blurb: "Paste anything tabular into a fast virtualised grid — edit, sort, filter, and export anywhere. All client-side.",
     status: "live",
     icon: <Table2 size={20} aria-hidden />,
+  },
+  {
+    to: "/pdf",
+    name: "PDF tools",
+    blurb: "Merge, split, rotate, crop, watermark, stamp, fill forms, edit metadata, extract text, build PDFs from images — all client-side via pdf-lib + pdfjs.",
+    status: "live",
+    icon: <FileType size={20} aria-hidden />,
   },
 ];
 

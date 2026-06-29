@@ -72,6 +72,23 @@ if (!workerResult.success) {
   process.exit(1);
 }
 
+// Build pdfjs's worker as a separate fixed-name module. pdfjs reads
+// GlobalWorkerOptions.workerSrc at runtime (see app/pdf/io/pdfjs.ts), so
+// emitting it at a known path lets us avoid `new Worker(new URL(...))` rewriting.
+const pdfWorkerResult = await Bun.build({
+  entrypoints: [join(ROOT, "app/pdf/io/pdfjs-worker.ts")],
+  outdir: join(DIST, "assets"),
+  target: "browser",
+  format: "esm",
+  minify: true,
+  naming: { entry: "pdf-worker.js", chunk: "pw-[hash].[ext]", asset: "[name]-[hash].[ext]" },
+  define: { "process.env.NODE_ENV": JSON.stringify("production") },
+});
+if (!pdfWorkerResult.success) {
+  for (const log of pdfWorkerResult.logs) console.error(log);
+  process.exit(1);
+}
+
 const entry = result.outputs.find((o) => o.kind === "entry-point");
 if (!entry) throw new Error("bun build produced no entry-point output");
 const entryHref = "/" + relative(DIST, entry.path).replaceAll("\\", "/");

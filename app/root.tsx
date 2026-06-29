@@ -70,6 +70,12 @@ export default function Root() {
           >
             Paint
           </NavLink>
+          <NavLink
+            to="/pdf"
+            className={({ isActive }) => (isActive ? "text-accent" : "")}
+          >
+            PDF
+          </NavLink>
         </nav>
       </header>
       <main className="mx-auto w-full max-w-[1100px] flex-1 px-6 py-8">
