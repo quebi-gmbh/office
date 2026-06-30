@@ -5,10 +5,25 @@ when conventions shift.
 
 ## Stack
 
-- Bun (runtime, package manager, bundler) — `bun run dev`, `bun run build`, `bun run typecheck`.
-- React 19 + React Router 7 in SPA mode.
-- File-based routes via `scripts/generate-routes.ts` → `app/routes.gen.ts`.
+- Bun (runtime + package manager) — `bun run dev`, `bun run build`, `bun run typecheck`.
+- Vite + React 19 + React Router 8 in **framework mode**, `ssr: false` with
+  every route prerendered to static HTML (`react-router.config.ts`).
+- File-based routes via `@react-router/fs-routes` `flatRoutes()` in `app/routes.ts`
+  (flat convention: `_index.tsx` → `/`, `code.tsx` → `/code`, …).
 - Static hosting on GitHub Pages (`office.quebi.de`).
+
+### SEO
+
+- `app/lib/site-routes.ts` is the single source of truth for routes + per-page
+  metadata (title, description, OG eyebrow/slug). It drives `prerender()`,
+  `app/lib/seo.ts` (the per-route `meta()` exports), the sitemap, and OG images.
+- `scripts/prebuild.ts` (run by `predev`/`build`) copies pdfjs runtime assets
+  into `public/pdfjs/` and writes `public/sitemap.xml` + `public/robots.txt`.
+- `scripts/generate-og.ts` (run by `build`) renders one 1200×630 OG image per
+  route into `public/og/` with satori + resvg (fonts in `scripts/assets/`).
+- Browser-only tool editors are gated behind `app/components/ClientOnly.tsx` so
+  routes prerender to a crawlable `ToolIntro` (h1 + description) and mount the
+  real editor after hydration.
 
 ## Styling
 
@@ -18,14 +33,10 @@ Tailwind CSS v4, configured CSS-first.
   block defining the color and font tokens, a `@media (prefers-color-scheme: dark)`
   override that rebinds the same tokens, and any leftover plain CSS for views
   not yet migrated to utilities.
-- **Output:** `dist/styles.css`, linked from `public/index.html` via
-  `<link rel="stylesheet" href="/styles.css">`. The output file is generated
-  by the Tailwind CLI; it is **not** processed by `Bun.build`.
-- **Dev pipeline:** `scripts/dev.ts` runs a one-shot compile, then spawns
-  `@tailwindcss/cli --watch` for the lifetime of the dev server. `build.ts`
-  is invoked with `SKIP_CSS=1` so it doesn't fight the watcher.
-- **Prod pipeline:** `scripts/build.ts` runs `@tailwindcss/cli --minify`
-  after copying `public/` into `dist/`.
+- **Pipeline:** `app/app.css` is imported from `app/root.tsx` and processed by
+  the `@tailwindcss/vite` plugin (see `vite.config.ts`). Vite injects the CSS
+  via `<Links />` in dev and as a hashed asset in the prerendered HTML. There is
+  no separate Tailwind CLI step anymore.
 
 ### Conventions
 

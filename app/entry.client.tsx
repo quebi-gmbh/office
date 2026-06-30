@@ -1,23 +1,12 @@
-import { StrictMode } from "react";
-import { createRoot } from "react-dom/client";
-import { createBrowserRouter, RouterProvider } from "react-router";
-import Root, { ErrorBoundary } from "./root";
-import { routes } from "./routes.gen";
+import { startTransition, StrictMode } from "react";
+import { hydrateRoot } from "react-dom/client";
+import { HydratedRouter } from "react-router/dom";
 
-const router = createBrowserRouter([
-  {
-    path: "/",
-    Component: Root,
-    ErrorBoundary,
-    children: routes,
-  },
-]);
-
-const container = document.getElementById("root");
-if (!container) throw new Error("#root element missing");
-
-createRoot(container).render(
-  <StrictMode>
-    <RouterProvider router={router} />
-  </StrictMode>,
-);
+startTransition(() => {
+  hydrateRoot(
+    document,
+    <StrictMode>
+      <HydratedRouter />
+    </StrictMode>,
+  );
+});

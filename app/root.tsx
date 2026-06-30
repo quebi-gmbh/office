@@ -1,5 +1,44 @@
 import { Suspense } from "react";
-import { isRouteErrorResponse, Link, NavLink, Outlet, useRouteError } from "react-router";
+import {
+  isRouteErrorResponse,
+  Link,
+  Links,
+  Meta,
+  NavLink,
+  Outlet,
+  Scripts,
+  ScrollRestoration,
+  useRouteError,
+} from "react-router";
+import "./app.css";
+
+/**
+ * Document shell. React Router injects per-route <title>/meta via <Meta /> and
+ * the bundled CSS/JS via <Links />/<Scripts />. The static head bits that used
+ * to live in public/index.html (favicons, theme-color) now live here.
+ */
+export function Layout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <head>
+        <meta charSet="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="color-scheme" content="dark" />
+        <meta name="theme-color" content="#030712" />
+        <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+        <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+        <link rel="icon" type="image/png" sizes="128x128" href="/favicon-128x128.png" />
+        <Meta />
+        <Links />
+      </head>
+      <body>
+        {children}
+        <ScrollRestoration />
+        <Scripts />
+      </body>
+    </html>
+  );
+}
 
 /**
  * Root-level error boundary.
@@ -44,9 +83,9 @@ export function ErrorBoundary() {
   );
 }
 
-export default function Root() {
+export default function App() {
   return (
-    <div className="flex min-h-full flex-col">
+    <div id="root" className="flex min-h-full flex-col">
       <header className="flex items-center justify-between border-b border-border bg-card px-6 py-4">
         <Link to="/" className="font-semibold tracking-tight">
           office.quebi.de
@@ -69,6 +108,12 @@ export default function Root() {
             className={({ isActive }) => (isActive ? "text-accent" : "")}
           >
             Paint
+          </NavLink>
+          <NavLink
+            to="/table"
+            className={({ isActive }) => (isActive ? "text-accent" : "")}
+          >
+            Table
           </NavLink>
           <NavLink
             to="/pdf"
