@@ -89,6 +89,21 @@ if (!pdfWorkerResult.success) {
   process.exit(1);
 }
 
+// pdfjs v6 fetches WebAssembly decoders (JBIG2, OpenJPEG, qcms) and font/cmap
+// data from `wasmUrl` / `cMapUrl` / `standardFontDataUrl` at runtime. We point
+// those at /assets/{wasm,cmaps,standard_fonts}/ in app/pdf/io/pdfjs.ts, so the
+// matching directories from node_modules/pdfjs-dist need to land in dist/.
+// Without the wasm copy, scanned PDFs (JBIG2-encoded pages) render as blanks
+// with "JBig2 failed to initialize" warnings.
+const PDFJS_DIST = join(ROOT, "node_modules/pdfjs-dist");
+await Promise.all([
+  cp(join(PDFJS_DIST, "wasm"), join(DIST, "assets/wasm"), { recursive: true }),
+  cp(join(PDFJS_DIST, "cmaps"), join(DIST, "assets/cmaps"), { recursive: true }),
+  cp(join(PDFJS_DIST, "standard_fonts"), join(DIST, "assets/standard_fonts"), {
+    recursive: true,
+  }),
+]);
+
 const entry = result.outputs.find((o) => o.kind === "entry-point");
 if (!entry) throw new Error("bun build produced no entry-point output");
 const entryHref = "/" + relative(DIST, entry.path).replaceAll("\\", "/");
