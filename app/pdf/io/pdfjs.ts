@@ -18,6 +18,21 @@ type PdfJs = typeof PdfJsNs;
 
 let pdfjsPromise: Promise<PdfJs> | null = null;
 
+// Base URLs for pdfjs runtime assets (must end with a trailing slash — pdfjs
+// concatenates the filename directly). scripts/build.ts copies the matching
+// directories from node_modules/pdfjs-dist into dist/assets/.
+//
+// - WASM_URL: jbig2.wasm / openjpeg.wasm / qcms_bg.wasm. Without this, scanned
+//   PDFs (JBIG2-compressed pages) fail to render with
+//   "JBig2Error: JBig2 failed to initialize" because pdfjs falls back to
+//   fetching `null` + filename.
+// - CMAP_URL: predefined CMaps for CJK / non-Latin fonts.
+// - STD_FONT_URL: replacement glyphs for the 14 standard PDF fonts when the
+//   document doesn't embed them.
+const WASM_URL = "/assets/wasm/";
+const CMAP_URL = "/assets/cmaps/";
+const STD_FONT_URL = "/assets/standard_fonts/";
+
 export async function getPdfjs(): Promise<PdfJs> {
   if (pdfjsPromise) return pdfjsPromise;
   pdfjsPromise = (async () => {
@@ -43,6 +58,10 @@ export async function loadPdfJsDoc(bytes: Uint8Array): Promise<PDFDocumentProxy>
     data: copy,
     disableAutoFetch: true,
     disableStream: true,
+    wasmUrl: WASM_URL,
+    cMapUrl: CMAP_URL,
+    cMapPacked: true,
+    standardFontDataUrl: STD_FONT_URL,
   });
   return task.promise;
 }
