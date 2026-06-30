@@ -1,8 +1,15 @@
 node_modules
 dist
-app/routes.gen.ts
+build
+.react-router/
 *.log
 .DS_Store
+
+# Generated into public/ by scripts at build time
+public/pdfjs/
+public/og/
+public/sitemap.xml
+public/robots.txt
 
 # local scratch
 .playwright-mcp/

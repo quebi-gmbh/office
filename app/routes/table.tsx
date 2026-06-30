@@ -1,12 +1,31 @@
 /**
  * /table — paste-anything spreadsheet.
  *
- * Tier 1 MVP (epic #59). This route is the lazy-loaded entry point; the actual
- * UI lives in app/table/ui/TableApp.tsx so the heavy bits stay in this chunk
- * and out of the shared bundle.
+ * The heavy grid + Web Worker live in app/table/, dynamically imported and
+ * client-only gated so the route prerenders to a lightweight, crawlable intro.
  */
-import { TableApp } from "~/table/ui/TableApp";
+import { lazy, Suspense } from "react";
+import { ClientOnly } from "~/components/ClientOnly";
+import { ToolIntro } from "~/components/ToolIntro";
+import { seo } from "~/lib/seo";
+
+export function meta() {
+  return seo("/table");
+}
+
+const TableApp = lazy(() =>
+  import("~/table/ui/TableApp").then((m) => ({ default: m.TableApp })),
+);
 
 export default function Table() {
-  return <TableApp />;
+  const intro = <ToolIntro path="/table" />;
+  return (
+    <ClientOnly fallback={intro}>
+      {() => (
+        <Suspense fallback={intro}>
+          <TableApp />
+        </Suspense>
+      )}
+    </ClientOnly>
+  );
 }

@@ -30,11 +30,16 @@ jobs:
 
       - run: bun run build
 
+      # GitHub Pages serves 404.html for any unknown path. React Router emits a
+      # __spa-fallback.html that hydrates any route — use it so non-prerendered
+      # paths still resolve client-side.
+      - run: cp build/client/__spa-fallback.html build/client/404.html
+
       - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: ./dist
+          path: ./build/client
 
   deploy:
     needs: build

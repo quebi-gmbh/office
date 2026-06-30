@@ -13,10 +13,18 @@
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": false,
     "noEmit": true,
-    "types": ["bun-types"],
+    "types": ["bun-types", "vite/client"],
+    "baseUrl": ".",
     "paths": {
       "~/*": ["./app/*"]
-    }
+    },
+    "rootDirs": [".", "./.react-router/types"]
   },
-  "include": ["app/**/*", "scripts/**/*"]
+  "include": [
+    "app",
+    "scripts",
+    "vite.config.ts",
+    "react-router.config.ts",
+    ".react-router/types/**/*"
+  ]
 }

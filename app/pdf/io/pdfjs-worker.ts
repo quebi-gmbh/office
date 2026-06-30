@@ -1,11 +1,12 @@
 /**
- * pdfjs worker entry — re-exports the prebuilt worker so scripts/build.ts can
- * emit it as a single fixed-name asset (`/assets/pdf-worker.js`). The main
- * thread points `GlobalWorkerOptions.workerSrc` at that URL.
+ * pdfjs worker entry. Imported with Vite's `?worker` suffix from
+ * app/pdf/io/pdfjs.ts, which bundles this module into a dedicated worker chunk
+ * and gives back a Worker constructor. The main thread hands the instance to
+ * pdfjs via `GlobalWorkerOptions.workerPort`.
  *
- * We re-export rather than copy the file from node_modules because Bun.build
- * already knows how to bundle the worker entry as ESM with the correct
- * minification + browser target, matching the rest of our chunks.
+ * The polyfill side-effect import below must run inside the worker too (pdfjs v6
+ * calls getOrInsertComputed on the worker thread), which is exactly why we wrap
+ * the upstream worker in our own entry instead of pointing at it directly.
  */
 // Polyfill must be installed before the worker bundle evaluates — same reason
 // as in pdfjs.ts. See app/pdf/io/polyfills.ts.

@@ -1,13 +1,17 @@
 /**
  * pdfjs-dist wrapper — lazy-loads pdfjs the first time we need it (rendering
  * thumbnails / previews, extracting text). Both calls go through `getPdfjs`,
- * which sets up `GlobalWorkerOptions.workerSrc` once.
+ * which sets up the worker once.
  *
- * The worker is emitted as a fixed-name asset by scripts/build.ts so we can
- * point at `/assets/pdf-worker.js` without dynamic URL rewriting.
+ * The worker is a Vite `?worker` chunk (see pdfjs-worker import below); we hand
+ * the instance to pdfjs via `GlobalWorkerOptions.workerPort`.
  */
 import type * as PdfJsNs from "pdfjs-dist";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
+// Vite `?worker` import: bundles app/pdf/io/pdfjs-worker.ts (polyfills + the
+// pdfjs worker) and gives us a Worker constructor. We hand the instance to
+// pdfjs via GlobalWorkerOptions.workerPort below.
+import PdfjsWorker from "./pdfjs-worker?worker";
 // Side-effect import: installs Map/WeakMap.prototype.getOrInsertComputed before
 // pdfjs-dist is evaluated. pdfjs v6 calls those methods unconditionally and
 // throws "this[#$].getOrInsertComputed is not a function" on browsers that
@@ -19,8 +23,8 @@ type PdfJs = typeof PdfJsNs;
 let pdfjsPromise: Promise<PdfJs> | null = null;
 
 // Base URLs for pdfjs runtime assets (must end with a trailing slash — pdfjs
-// concatenates the filename directly). scripts/build.ts copies the matching
-// directories from node_modules/pdfjs-dist into dist/assets/.
+// concatenates the filename directly). scripts/prebuild.ts copies the matching
+// directories from node_modules/pdfjs-dist into public/pdfjs/ (served at /pdfjs/).
 //
 // - WASM_URL: jbig2.wasm / openjpeg.wasm / qcms_bg.wasm. Without this, scanned
 //   PDFs (JBIG2-compressed pages) fail to render with
@@ -29,17 +33,18 @@ let pdfjsPromise: Promise<PdfJs> | null = null;
 // - CMAP_URL: predefined CMaps for CJK / non-Latin fonts.
 // - STD_FONT_URL: replacement glyphs for the 14 standard PDF fonts when the
 //   document doesn't embed them.
-const WASM_URL = "/assets/wasm/";
-const CMAP_URL = "/assets/cmaps/";
-const STD_FONT_URL = "/assets/standard_fonts/";
+const WASM_URL = "/pdfjs/wasm/";
+const CMAP_URL = "/pdfjs/cmaps/";
+const STD_FONT_URL = "/pdfjs/standard_fonts/";
 
 export async function getPdfjs(): Promise<PdfJs> {
   if (pdfjsPromise) return pdfjsPromise;
   pdfjsPromise = (async () => {
     const mod = await import("pdfjs-dist");
-    // The worker lives at a fixed path emitted by scripts/build.ts.
-    // In dev, scripts/dev.ts also writes the same file.
-    mod.GlobalWorkerOptions.workerSrc = "/assets/pdf-worker.js";
+    // Hand pdfjs a Vite-bundled worker instance (keeps the getOrInsertComputed
+    // polyfill that pdfjs-worker.ts installs). Using workerPort rather than
+    // workerSrc avoids any runtime URL/path assumptions.
+    mod.GlobalWorkerOptions.workerPort = new PdfjsWorker();
     return mod as unknown as PdfJs;
   })();
   return pdfjsPromise;

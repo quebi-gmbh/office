@@ -35,25 +35,29 @@ Documents are auto-saved to `localStorage` every second (configurable). The lang
 
 ## Tech
 
-- [Bun](https://bun.sh) — runtime, package manager, and bundler (`bun build`)
-- [React 19](https://react.dev) + [React Router 7](https://reactrouter.com) (SPA mode)
-- [Tailwind CSS v4](https://tailwindcss.com) — utility-first styling, CSS-first config in `app/app.css`. See `CLAUDE.md` → "Styling" for conventions.
-- [CodeMirror 6](https://codemirror.net/) — code editor engine for `/code`. Mutable settings are hot-swapped via CM6 Compartments so the undo history, cursor, and selection always survive configuration changes. Language packs and heavy plugins (Prettier, Vim, Emacs, minimap, linters) are dynamic `import()` chunks that only load on demand, keeping the initial bundle well under 200 KB gzipped.
-- File-based routing via the flat-routes convention (subset, see below). Non-index routes are lazy via `React.lazy()` so CodeMirror only loads when `/code` is visited.
-- GitHub Pages for static hosting
+- [Bun](https://bun.sh) — runtime and package manager
+- [Vite](https://vite.dev) + [React 19](https://react.dev) + [React Router 8](https://reactrouter.com) in **framework mode**, `ssr: false` with every route prerendered to static HTML (`react-router.config.ts`). Each page ships complete content + per-page meta for SEO / social / AI crawlers without running JS.
+- [Tailwind CSS v4](https://tailwindcss.com) — utility-first styling, CSS-first config in `app/app.css`, compiled by the `@tailwindcss/vite` plugin. See `CLAUDE.md` → "Styling" for conventions.
+- [CodeMirror 6](https://codemirror.net/) — code editor engine for `/code`. Mutable settings are hot-swapped via CM6 Compartments so the undo history, cursor, and selection always survive configuration changes. Language packs and heavy plugins (Prettier, Vim, Emacs, minimap, linters) are dynamic `import()` chunks that only load on demand.
+- File-based routing via `@react-router/fs-routes` (flat-routes convention, see below). Tool editors are dynamically imported and client-only gated so each route prerenders to a lightweight, crawlable intro.
+- GitHub Pages for static hosting.
+
+## SEO
+
+`app/lib/site-routes.ts` is the single source of truth for routes + per-page metadata. It drives the `prerender()` list, the per-route `meta()` exports (`app/lib/seo.ts`), `public/sitemap.xml` + `public/robots.txt` (`scripts/prebuild.ts`), and one Open Graph image per route (`scripts/generate-og.ts`, satori + resvg). Add a route by adding an entry there.
 
 ## Develop
 
 ```sh
 bun install
-bun run dev      # http://localhost:3000, rebuilds + auto-reloads on save
-bun run build    # production build → dist/
+bun run dev        # Vite dev server with HMR
+bun run build      # prebuild assets + OG images + react-router build → build/client/
 bun run typecheck
 ```
 
 ## Routing
 
-Files in `app/routes/` become routes via a generator (`scripts/generate-routes.ts`) that produces `app/routes.gen.ts`. The supported subset of the flat-routes convention:
+Files in `app/routes/` become routes via `@react-router/fs-routes` `flatRoutes()` (`app/routes.ts`). The supported subset of the flat-routes convention:
 
 | File              | URL          |
 |-------------------|--------------|
@@ -64,15 +68,15 @@ Files in `app/routes/` become routes via a generator (`scripts/generate-routes.t
 | `$.tsx`           | `/*` (splat) |
 | `_layout.tsx`     | pathless     |
 
-Routes are regenerated automatically as part of `bun run build` and `bun run dev`.
+New routes should also be added to `app/lib/site-routes.ts` so they're prerendered and get metadata.
 
 ## Deploy
 
 Pushes to `main` build and deploy via `.github/workflows/deploy.yml`. The build:
 
-1. Bundles to `dist/` with `Bun.build`
-2. Copies `public/` (including `CNAME`) into `dist/`
-3. Writes `dist/404.html` as a copy of `index.html` so deep links like `/code`, `/docs`, `/paint`, and `/pdf` survive a hard refresh on GitHub Pages.
+1. Runs `scripts/prebuild.ts` (pdfjs assets → `public/pdfjs/`, sitemap + robots) and `scripts/generate-og.ts` (OG images → `public/og/`).
+2. Runs `react-router build`, prerendering every route to `build/client/<route>/index.html` (with a `__spa-fallback.html`).
+3. Copies `__spa-fallback.html` → `404.html` so non-prerendered deep links still resolve client-side on GitHub Pages.
 
 DNS: point `office` (CNAME) at `<user>.github.io`.
 

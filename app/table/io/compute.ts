@@ -17,8 +17,8 @@ function getWorker(): Worker | null {
   if (unavailable) return null;
   if (worker) return worker;
   try {
-    // The worker is emitted as a fixed-name chunk by scripts/build.ts.
-    worker = new Worker("/assets/table-worker.js", { type: "module" });
+    // Vite bundles this worker entry and rewrites the URL at build time.
+    worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
     worker.onmessage = (e: MessageEvent<{ id: number; ok: boolean; doc?: TableDoc; rows?: string[][]; error?: string }>) => {
       const p = pending.get(e.data.id);
       if (!p) return;

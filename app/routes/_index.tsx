@@ -1,6 +1,11 @@
 import type { ReactNode } from "react";
 import { Code2, FileText, FileType, Paintbrush, Table2 } from "lucide-react";
 import { Link } from "react-router";
+import { seo } from "~/lib/seo";
+
+export function meta() {
+  return seo("/");
+}
 
 type Tool = {
   to: string;
