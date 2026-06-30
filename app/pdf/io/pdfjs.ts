@@ -8,6 +8,11 @@
  */
 import type * as PdfJsNs from "pdfjs-dist";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
+// Side-effect import: installs Map/WeakMap.prototype.getOrInsertComputed before
+// pdfjs-dist is evaluated. pdfjs v6 calls those methods unconditionally and
+// throws "this[#$].getOrInsertComputed is not a function" on browsers that
+// haven't shipped the TC39 Upsert proposal yet.
+import "./polyfills";
 
 type PdfJs = typeof PdfJsNs;
 
