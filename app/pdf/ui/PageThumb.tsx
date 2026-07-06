@@ -9,6 +9,7 @@ type Props = {
   docId: string;
   rev: number;
   bytes: Uint8Array;
+  password?: string;
   page: number;
   width: number;
   selected: boolean;
@@ -19,6 +20,7 @@ export function PageThumb({
   docId,
   rev,
   bytes,
+  password,
   page,
   width,
   selected,
@@ -31,11 +33,11 @@ export function PageThumb({
     let alive = true;
     setSrc(null);
     setError(null);
-    getThumbnail(docId, rev, bytes, page, width)
+    getThumbnail(docId, rev, bytes, page, width, password)
       .then((url) => { if (alive) setSrc(url); })
       .catch((e) => { if (alive) setError((e as Error).message); });
     return () => { alive = false; };
-  }, [docId, rev, bytes, page, width]);
+  }, [docId, rev, bytes, password, page, width]);
 
   return (
     <button

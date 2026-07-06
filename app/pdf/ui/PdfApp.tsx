@@ -21,11 +21,13 @@ import { useToast } from "~/components/Toast";
 import { OperationRail, type PanelId } from "~/pdf/ui/OperationRail";
 import { ThumbnailGrid } from "~/pdf/ui/ThumbnailGrid";
 import { PreviewPane } from "~/pdf/ui/PreviewPane";
+import { PasswordPrompt } from "~/pdf/ui/PasswordPrompt";
 import {
-  createDoc, replaceBytes, type OpenDoc,
+  createDoc, replaceBytes, setPassword, type OpenDoc,
   selectAll, clearSelection,
 } from "~/pdf/lib/state";
-import { invalidateDoc } from "~/pdf/lib/thumb-cache";
+import { invalidateDoc, probePassword } from "~/pdf/lib/thumb-cache";
+import type { PasswordErrorKind } from "~/pdf/io/pdfjs";
 import { pickPdfFiles, fetchPdfFromUrl, isPdfFile } from "~/pdf/io/load";
 import { downloadBytes, suffixedName } from "~/pdf/io/save";
 
@@ -52,6 +54,8 @@ export function PdfApp() {
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [previewPage, setPreviewPage] = useState<number | null>(null);
+  // Password-error kind for the active doc (null = renders fine / not encrypted).
+  const [pwNeeded, setPwNeeded] = useState<PasswordErrorKind | null>(null);
   const dropRef = useRef<HTMLDivElement>(null);
   const { show: showToast, ToastContainer } = useToast();
 
@@ -62,6 +66,34 @@ export function PdfApp() {
     if (activeDoc && !activePanel) setActivePanel("pages");
     if (!activeDoc && activePanel === "pages") setActivePanel(null);
   }, [activeDoc, activePanel]);
+
+  // Detect whether the active (encrypted) doc still needs a password before its
+  // pages can be rendered. Unencrypted docs — and encrypted ones with an empty
+  // user password — probe clean and never show the prompt. Reuses the cached
+  // pdfjs load, so this doesn't parse the document twice.
+  const activeId = activeDoc?.id ?? null;
+  const activeRev = activeDoc?.rev ?? 0;
+  const activeEncrypted = activeDoc?.encrypted ?? false;
+  const activeBytes = activeDoc?.bytes;
+  const activePassword = activeDoc?.password;
+  useEffect(() => {
+    if (!activeId || !activeEncrypted || !activeBytes) {
+      setPwNeeded(null);
+      return;
+    }
+    let alive = true;
+    probePassword(activeId, activeRev, activeBytes, activePassword)
+      .then((kind) => { if (alive) setPwNeeded(kind); })
+      .catch(() => { if (alive) setPwNeeded(null); });
+    return () => { alive = false; };
+  }, [activeId, activeRev, activeEncrypted, activeBytes, activePassword]);
+
+  // Apply an entered password and re-run the blocked renders.
+  const submitPassword = useCallback((password: string) => {
+    if (!activeDoc) return;
+    invalidateDoc(activeDoc.id);
+    setDocs((prev) => prev.map((d) => (d.id === activeDoc.id ? setPassword(d, password) : d)));
+  }, [activeDoc]);
 
   // Open files via picker.
   const openFiles = useCallback(async () => {
@@ -299,6 +331,15 @@ export function PdfApp() {
         <div className="flex min-w-0 flex-1 flex-col gap-3">
           {activeDoc ? (
             <>
+              {/* Password prompt for encrypted docs that can't render yet */}
+              {pwNeeded && (
+                <PasswordPrompt
+                  incorrect={pwNeeded === "incorrect"}
+                  busy={busy}
+                  onSubmit={submitPassword}
+                />
+              )}
+
               {/* Thumbnails + selection bar */}
               <div className="rounded-xl border border-border bg-card p-3">
                 <div className="mb-2 flex items-center justify-between text-xs text-muted">

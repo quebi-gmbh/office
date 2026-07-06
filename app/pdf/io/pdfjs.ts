@@ -51,16 +51,51 @@ export async function getPdfjs(): Promise<PdfJs> {
 }
 
 /**
+ * Kind of pdfjs `PasswordException`:
+ * - `"need"`    — the document is encrypted and no (or an empty) password was
+ *                 supplied (`PasswordResponses.NEED_PASSWORD`).
+ * - `"incorrect"` — a password was supplied but it didn't decrypt the document
+ *                 (`PasswordResponses.INCORRECT_PASSWORD`).
+ */
+export type PasswordErrorKind = "need" | "incorrect";
+
+// pdfjs numeric codes on a PasswordException (PasswordResponses enum). These are
+// stable across pdfjs versions: NEED_PASSWORD = 1, INCORRECT_PASSWORD = 2.
+const NEED_PASSWORD = 1;
+const INCORRECT_PASSWORD = 2;
+
+/**
+ * Classify an error thrown by `loadPdfJsDoc` (or any pdfjs load). Returns the
+ * password-error kind, or `null` if it isn't a `PasswordException`. Lets the UI
+ * decide whether to prompt for a password (and whether to say "incorrect").
+ */
+export function passwordErrorKind(err: unknown): PasswordErrorKind | null {
+  const e = err as { name?: string; code?: number } | null;
+  if (!e || e.name !== "PasswordException") return null;
+  return e.code === INCORRECT_PASSWORD ? "incorrect" : "need";
+}
+
+/**
  * Load a PDF document via pdfjs. pdfjs takes ownership of the buffer once we
  * pass it in (it transfers / reads from it on the worker thread), so callers
  * should pass a *copy* if they still want to use the bytes themselves.
+ *
+ * `password` decrypts encrypted documents so page content streams can be
+ * rendered / text-extracted. Without it, encrypted PDFs reject the returned
+ * promise with a `PasswordException` (see `passwordErrorKind`). pdf-lib is
+ * loaded separately with `ignoreEncryption`, so the document metadata already
+ * opened even when this render path can't.
  */
-export async function loadPdfJsDoc(bytes: Uint8Array): Promise<PDFDocumentProxy> {
+export async function loadPdfJsDoc(
+  bytes: Uint8Array,
+  password?: string,
+): Promise<PDFDocumentProxy> {
   const pdfjs = await getPdfjs();
   // pdfjs ≥ 4 detaches the buffer; clone defensively.
   const copy = bytes.slice();
   const task = pdfjs.getDocument({
     data: copy,
+    password,
     disableAutoFetch: true,
     disableStream: true,
     wasmUrl: WASM_URL,
@@ -70,6 +105,9 @@ export async function loadPdfJsDoc(bytes: Uint8Array): Promise<PDFDocumentProxy>
   });
   return task.promise;
 }
+
+// Re-export the codes for tests / diagnostics without exposing pdfjs internals.
+export const PasswordResponseCodes = { NEED_PASSWORD, INCORRECT_PASSWORD } as const;
 
 /**
  * Render a single page to a canvas at the requested CSS width (px). Returns

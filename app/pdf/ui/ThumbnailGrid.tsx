@@ -50,6 +50,7 @@ export function ThumbnailGrid({ doc, thumbWidth, onSelectionChange }: Props) {
           docId={doc.id}
           rev={doc.rev}
           bytes={doc.bytes}
+          password={doc.password}
           page={p}
           width={thumbWidth}
           selected={doc.selected.has(p)}

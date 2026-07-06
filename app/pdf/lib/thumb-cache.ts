@@ -6,7 +6,12 @@
  * Rendering a page is *expensive* (worker round-trip + canvas paint), so we
  * cache aggressively. The cache is global and shared across panels.
  */
-import { loadPdfJsDoc, renderPageToCanvas } from "~/pdf/io/pdfjs";
+import {
+  loadPdfJsDoc,
+  renderPageToCanvas,
+  passwordErrorKind,
+  type PasswordErrorKind,
+} from "~/pdf/io/pdfjs";
 
 const MAX_ENTRIES = 400;
 const cache = new Map<string, string>(); // key -> dataURL
@@ -31,23 +36,56 @@ async function getPdfJsDoc(
   docId: string,
   rev: number,
   bytes: Uint8Array,
+  password?: string,
 ): Promise<import("pdfjs-dist").PDFDocumentProxy> {
   const k = `${docId}:${rev}`;
   const existing = docCache.get(k);
   if (existing) return existing;
-  const p = loadPdfJsDoc(bytes);
+  const p = loadPdfJsDoc(bytes, password);
   docCache.set(k, p);
-  // Best-effort: when the rev changes, drop stale entries for this doc.
-  void p.then((doc) => {
-    for (const cachedKey of docCache.keys()) {
-      if (cachedKey.startsWith(`${docId}:`) && cachedKey !== k) {
-        docCache.get(cachedKey)?.then((old) => old.loadingTask.destroy()).catch(() => {});
-        docCache.delete(cachedKey);
+  // Best-effort: when the rev changes, drop stale entries for this doc. The
+  // extra `.catch` keeps a rejected load (e.g. wrong password) from surfacing
+  // as an unhandled rejection — the real error still propagates to callers of
+  // `p`.
+  void p
+    .then((doc) => {
+      for (const cachedKey of docCache.keys()) {
+        if (cachedKey.startsWith(`${docId}:`) && cachedKey !== k) {
+          docCache.get(cachedKey)?.then((old) => old.loadingTask.destroy()).catch(() => {});
+          docCache.delete(cachedKey);
+        }
       }
-    }
-    return doc;
-  });
+      return doc;
+    })
+    .catch(() => {
+      // Drop the failed promise so a later retry (new password, same rev) can
+      // re-attempt the load instead of replaying the cached rejection.
+      if (docCache.get(k) === p) docCache.delete(k);
+    });
   return p;
+}
+
+/**
+ * Attempt to load the doc via pdfjs and report whether it needs a password.
+ * Returns `null` when the document loads fine (unencrypted, or the supplied
+ * password worked), or the `PasswordErrorKind` when pdfjs wants a password.
+ * Re-throws any non-password error. Reuses the same cached loading task as the
+ * thumbnail renderer, so this never triggers a second parse.
+ */
+export async function probePassword(
+  docId: string,
+  rev: number,
+  bytes: Uint8Array,
+  password?: string,
+): Promise<PasswordErrorKind | null> {
+  try {
+    await getPdfJsDoc(docId, rev, bytes, password);
+    return null;
+  } catch (e) {
+    const kind = passwordErrorKind(e);
+    if (kind) return kind;
+    throw e;
+  }
 }
 
 export async function getThumbnail(
@@ -56,6 +94,7 @@ export async function getThumbnail(
   bytes: Uint8Array,
   page: number,
   width: number,
+  password?: string,
 ): Promise<string> {
   const k = key(docId, rev, page, width);
   const cached = cache.get(k);
@@ -64,7 +103,7 @@ export async function getThumbnail(
   if (inflightP) return inflightP;
 
   const p = (async () => {
-    const pdf = await getPdfJsDoc(docId, rev, bytes);
+    const pdf = await getPdfJsDoc(docId, rev, bytes, password);
     const pdfPage = await pdf.getPage(page + 1);
     const canvas = await renderPageToCanvas(pdfPage, width);
     const dataUrl = canvas.toDataURL("image/png");
