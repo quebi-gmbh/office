@@ -30,12 +30,23 @@ export function SecurityPanel({ doc, busy, onReplace, onToast }: Props) {
         <div className="text-xs uppercase tracking-wider text-muted">Status</div>
         <div className="mt-1">
           {doc.encrypted ? (
-            <span className="text-amber-400">Encrypted</span>
+            <span className="text-amber-400">
+              Encrypted{doc.password ? " (unlocked for rendering)" : ""}
+            </span>
           ) : (
             <span className="text-accent">Not encrypted</span>
           )}
         </div>
       </div>
+
+      {doc.encrypted && !doc.password && (
+        <p className="text-xs text-muted">
+          Pages can't be rendered until you enter the document's password in the
+          prompt above the thumbnails. Removing the password below re-saves an
+          unencrypted copy (pdf-lib ignores encryption), which doesn't require
+          the password.
+        </p>
+      )}
 
       <button
         type="button"

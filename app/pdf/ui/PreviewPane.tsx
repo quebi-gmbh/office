@@ -19,11 +19,11 @@ export function PreviewPane({ doc, page, width }: Props) {
     let alive = true;
     setSrc(null);
     setErr(null);
-    getThumbnail(doc.id, doc.rev, doc.bytes, page, width)
+    getThumbnail(doc.id, doc.rev, doc.bytes, page, width, doc.password)
       .then((u) => { if (alive) setSrc(u); })
       .catch((e) => { if (alive) setErr((e as Error).message); });
     return () => { alive = false; };
-  }, [doc.id, doc.rev, doc.bytes, page, width]);
+  }, [doc.id, doc.rev, doc.bytes, doc.password, page, width]);
 
   if (err) {
     return (

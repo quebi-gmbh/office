@@ -6,8 +6,11 @@ import { loadPdfJsDoc, extractPageText } from "~/pdf/io/pdfjs";
 
 export type PageText = { page: number; text: string };
 
-export async function extractAllText(bytes: Uint8Array): Promise<PageText[]> {
-  const pdf = await loadPdfJsDoc(bytes);
+export async function extractAllText(
+  bytes: Uint8Array,
+  password?: string,
+): Promise<PageText[]> {
+  const pdf = await loadPdfJsDoc(bytes, password);
   const out: PageText[] = [];
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);

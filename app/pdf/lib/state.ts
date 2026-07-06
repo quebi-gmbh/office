@@ -18,6 +18,12 @@ export type OpenDoc = {
   rev: number;
   /** Whether the source PDF is encrypted (loaded with ignoreEncryption). */
   encrypted: boolean;
+  /**
+   * Password the user entered to decrypt the document for pdf.js rendering
+   * (thumbnails, preview, text extraction). `undefined` until supplied. pdf-lib
+   * loads with `ignoreEncryption` and never needs it; pdf.js does.
+   */
+  password?: string;
   /** 0-based page indices selected by the user. */
   selected: Set<number>;
 };
@@ -49,6 +55,15 @@ export async function replaceBytes(doc: OpenDoc, bytes: Uint8Array): Promise<Ope
     encrypted: pdf.isEncrypted,
     selected: new Set<number>(), // selection no longer maps cleanly
   };
+}
+
+/**
+ * Attach (or update) the password used to decrypt this doc for rendering.
+ * Bumps `rev` so the thumbnail / preview caches drop their stale (failed)
+ * renders and re-run with the new password.
+ */
+export function setPassword(doc: OpenDoc, password: string): OpenDoc {
+  return { ...doc, password, rev: doc.rev + 1 };
 }
 
 export function toggleSelected(doc: OpenDoc, page: number): OpenDoc {

@@ -22,7 +22,7 @@ export function ExtractTextPanel({ doc, busy, onToast }: Props) {
     setWorking(true);
     try {
       const sel = new Set(selectedSorted(doc).map((p) => p + 1));
-      const all = await extractAllText(doc.bytes);
+      const all = await extractAllText(doc.bytes, doc.password);
       const pages = sel.size > 0 ? all.filter((p) => sel.has(p.page)) : all;
       const joined = joinPagesAsText(pages);
       setText(joined);
