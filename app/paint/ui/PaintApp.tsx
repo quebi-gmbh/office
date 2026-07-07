@@ -30,6 +30,16 @@ import {
   rotateSession,
   clearAllAutosaveData,
 } from "~/paint/io/autosave";
+import { usePendingFileOpen, writeBlobToHandle } from "~/lib/workspace";
+
+type ImageMime = "image/png" | "image/jpeg" | "image/webp";
+
+function mimeFromName(name: string): ImageMime {
+  const lower = name.toLowerCase();
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  if (lower.endsWith(".webp")) return "image/webp";
+  return "image/png";
+}
 
 export function PaintApp() {
   const { engine, state, mainRef, previewRef } = usePaintEngine();
@@ -48,6 +58,11 @@ export function PaintApp() {
 
   // Autosave instance — stable ref.
   const autosaveRef = useRef(createAutosave());
+
+  // Workspace file handle (set when opened from the folder sidebar).
+  const wsHandleRef = useRef<FileSystemFileHandle | null>(null);
+  const wsMimeRef = useRef<ImageMime>("image/png");
+  const [wsFileName, setWsFileName] = useState<string | null>(null);
 
   // ─── Viewport wiring ──────────────────────────────────────────────────────
 
@@ -79,12 +94,36 @@ export function PaintApp() {
   useEffect(() => {
     engine.openExportDialog = () => setExportOpen(true);
     engine.quickSavePng = async () => {
+      // Prefer writing back to an open workspace file; otherwise download.
+      if (await saveToWorkspaceFile()) return;
       const canvas = document.querySelector<HTMLCanvasElement>(".paint-canvas-main");
       if (!canvas) return;
       const blob = await canvasToBlob(canvas, "image/png", 1);
       downloadBlob(blob, defaultFilename("image/png"));
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine]);
+
+  // Write the current canvas back to the workspace file handle, matching the
+  // file's original format. Returns false when no workspace file is open.
+  async function saveToWorkspaceFile(): Promise<boolean> {
+    const handle = wsHandleRef.current;
+    if (!handle) return false;
+    const canvas = document.querySelector<HTMLCanvasElement>(".paint-canvas-main");
+    if (!canvas) return false;
+    const blob = await canvasToBlob(canvas, wsMimeRef.current, 1);
+    await writeBlobToHandle(handle, blob);
+    return true;
+  }
+
+  // ─── Workspace: open an image handed off from the folder sidebar ───────────
+  usePendingFileOpen("paint", async ({ handle, name, file }) => {
+    const bitmap = await fileToImageBitmap(file);
+    wsHandleRef.current = handle;
+    wsMimeRef.current = mimeFromName(name);
+    setWsFileName(name);
+    replaceWithBitmap(bitmap);
+  });
 
   // ─── New-doc dialog wiring ─────────────────────────────────────────────────
 
@@ -343,6 +382,7 @@ export function PaintApp() {
         onClearData={async () => { await clearAllAutosaveData(); rotateSession(); }}
         onResize={() => setResizeOpen(true)}
         onScale={() => setScaleOpen(true)}
+        onSave={wsFileName ? () => void saveToWorkspaceFile() : undefined}
       />
       {/* Hidden file input */}
       <input

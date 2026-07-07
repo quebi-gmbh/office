@@ -11,6 +11,8 @@ import {
   useRouteError,
 } from "react-router";
 import "./app.css";
+import { ClientOnly } from "./components/ClientOnly";
+import { WorkspaceSidebar } from "./components/WorkspaceSidebar";
 
 /**
  * Document shell. React Router injects per-route <title>/meta via <Meta /> and
@@ -123,15 +125,20 @@ export default function App() {
           </NavLink>
         </nav>
       </header>
-      <main className="mx-auto w-full max-w-[1100px] flex-1 px-6 py-8">
-        <Suspense
-          fallback={
-            <div className="h-32 rounded-xl border border-border bg-card animate-pulse" />
-          }
-        >
-          <Outlet />
-        </Suspense>
-      </main>
+      <div className="flex min-h-0 flex-1">
+        <ClientOnly>{() => <WorkspaceSidebar />}</ClientOnly>
+        <main className="min-w-0 flex-1 overflow-auto">
+          <div className="mx-auto w-full max-w-[1100px] px-6 py-8">
+            <Suspense
+              fallback={
+                <div className="h-32 rounded-xl border border-border bg-card animate-pulse" />
+              }
+            >
+              <Outlet />
+            </Suspense>
+          </div>
+        </main>
+      </div>
       <footer className="flex flex-wrap justify-center gap-x-2 gap-y-1 border-t border-border px-6 py-4 text-sm text-muted">
         <span>made with stubbornness and Bun</span>
         <span aria-hidden="true">·</span>

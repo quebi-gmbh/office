@@ -7,7 +7,7 @@
  * a single `apply()` choke-point (history + autosave).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Undo2, Redo2, FilePlus2, Upload, Search, Settings, Download, Copy, Sparkles, Share2, History } from "lucide-react";
+import { Undo2, Redo2, FilePlus2, Upload, Search, Settings, Download, Copy, Sparkles, Share2, History, Save } from "lucide-react";
 import {
   type TableDoc,
   type CellPos,
@@ -107,7 +107,36 @@ import {
   blockFromClipboard,
   isImportableFile,
 } from "~/table/io/import";
+import {
+  usePendingFileOpen,
+  writeTextToHandle,
+  writeBlobToHandle,
+} from "~/lib/workspace";
 import { DetectModal, type ImportSource } from "./DetectModal";
+
+/** Strip the extension from a filename for use as a sheet/workbook name. */
+function stripExt(name: string): string {
+  return name.replace(/\.[^./\\]+$/, "");
+}
+
+/** Map a filename to the EXPORT_TARGETS id used to write it back, or null. */
+function exportTargetForName(name: string): string | null {
+  const ext = name.toLowerCase().match(/\.([a-z0-9]+)$/)?.[1];
+  switch (ext) {
+    case "csv": return "csv";
+    case "tsv": return "tsv";
+    case "json": return "json";
+    case "jsonl":
+    case "ndjson": return "jsonl";
+    case "md":
+    case "markdown": return "markdown";
+    case "html":
+    case "htm": return "html";
+    case "xlsx":
+    case "xls": return "xlsx";
+    default: return null;
+  }
+}
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { ColumnMenu } from "./ColumnMenu";
 import { SettingsDrawer } from "./SettingsDrawer";
@@ -179,6 +208,13 @@ export function TableApp() {
 
   const history = useRef(createHistory<Workbook>(workbook));
   const autosaver = useRef(createAutosaver((at) => setSavedAt(at)));
+
+  // Workspace file handle (set when opened from the folder sidebar).
+  const wsHandleRef = useRef<FileSystemFileHandle | null>(null);
+  const wsTargetRef = useRef<string | null>(null);
+  const [wsFileName, setWsFileName] = useState<string | null>(null);
+  const workbookRef = useRef(workbook);
+  workbookRef.current = workbook;
 
   // ── Load: shared #table= hash first, else persisted workbook (v1 migrate) ──
   useEffect(() => {
@@ -755,6 +791,62 @@ export function TableApp() {
     [doc, workbook, importSource, applyWorkbook],
   );
 
+  // ── Workspace: open a tabular file handed off from the folder sidebar ──────
+  usePendingFileOpen("table", async ({ handle, name, file }) => {
+    try {
+      const src = await sourceFromFile(file);
+      wsHandleRef.current = handle;
+      wsTargetRef.current = exportTargetForName(name);
+      const base = stripExt(name);
+      const fresh = docFromRows(src.detection.rows, base, src.detection.hasHeader);
+      fresh.id = doc.id;
+      applyWorkbook({ ...withActiveSheet(workbookRef.current, fresh), name: base });
+      setSelection(singleCell(0, 0));
+      setSortSpec([]);
+      setWsFileName(name);
+      setLoaded(true);
+      showToast(`Opened ${name}`);
+    } catch {
+      showToast("Could not open that file.", "error");
+    }
+  });
+
+  // Write the current sheet back to the workspace file in its original format.
+  // Returns false when no workspace file is open (caller falls back to export).
+  const saveToWorkspaceFile = useCallback(async (): Promise<boolean> => {
+    const handle = wsHandleRef.current;
+    const targetId = wsTargetRef.current;
+    if (!handle || !targetId) return false;
+    const target = EXPORT_TARGETS.find((t) => t.id === targetId);
+    if (!target) return false;
+    let exportDoc = doc;
+    if (!settings.exportFormulasAsText) {
+      const cols = doc.cols.map((col, c) =>
+        col.map((v, r) => (isFormula(v) ? resultToText(engine.evalCell(workbook.active, r, c)) : v)),
+      );
+      exportDoc = { ...doc, cols };
+    }
+    const ctx: ExportCtx = {
+      doc: exportDoc,
+      types: colTypes,
+      formats: Array.from({ length: doc.nCols }, (_, c) => getColFormat(doc, c)),
+      locale,
+    };
+    try {
+      if (target.binary && target.toBlob) {
+        await writeBlobToHandle(handle, await target.toBlob(ctx));
+      } else if (target.toText) {
+        await writeTextToHandle(handle, target.toText(ctx));
+      }
+      showToast(`Saved ${wsFileName ?? ""}`.trim());
+    } catch (e) {
+      showToast(`Save failed: ${(e as Error).message}`, "error");
+    }
+    return true;
+  }, [doc, colTypes, locale, settings.exportFormulasAsText, engine, workbook.active, wsFileName, showToast]);
+  const saveWsRef = useRef(saveToWorkspaceFile);
+  saveWsRef.current = saveToWorkspaceFile;
+
   // ── Paste: bootstrap when empty, else paste a block into the selection ─────
   const onPaste = useCallback(
     (e: React.ClipboardEvent) => {
@@ -830,6 +922,9 @@ export function TableApp() {
       } else if (e.shiftKey && k === "p") {
         e.preventDefault();
         setPaletteOpen(true);
+      } else if (k === "s" && wsHandleRef.current) {
+        e.preventDefault();
+        void saveWsRef.current();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -967,6 +1062,11 @@ export function TableApp() {
             <Search size={12} /> Find
           </button>
           <DataMenu onAction={runData} />
+          {wsFileName && (
+            <button type="button" className={btn} onClick={() => void saveToWorkspaceFile()} title={`Save to ${wsFileName} (Ctrl+S)`}>
+              <Save size={12} /> Save
+            </button>
+          )}
           <ExportMenu
             mode="download"
             label="Download"

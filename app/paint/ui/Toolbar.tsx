@@ -19,6 +19,7 @@ import {
   Pencil,
   Pipette,
   Redo2,
+  Save,
   Square,
   Trash2,
   Type,
@@ -38,6 +39,8 @@ interface ToolbarProps {
   onClearData(): void;
   onResize(): void;
   onScale(): void;
+  /** Present only when a workspace file is open — writes back to it. */
+  onSave?: () => void;
 }
 
 const TOOL_BUTTONS: Array<{ id: ToolId; icon: ReactNode; title: string }> = [
@@ -55,7 +58,7 @@ const TOOL_BUTTONS: Array<{ id: ToolId; icon: ReactNode; title: string }> = [
 
 const SHAPE_TOOLS = new Set<ToolId>(["line", "rect", "ellipse"]);
 
-export function Toolbar({ engine, state, onHelpOpen, onNewDoc, onOpenFile, onExport, onClearData, onResize, onScale }: ToolbarProps) {
+export function Toolbar({ engine, state, onHelpOpen, onNewDoc, onOpenFile, onExport, onClearData, onResize, onScale, onSave }: ToolbarProps) {
 
   return (
     <header className="paint-toolbar">
@@ -277,7 +280,12 @@ export function Toolbar({ engine, state, onHelpOpen, onNewDoc, onOpenFile, onExp
       <button type="button" className="paint-toolbar__btn" onClick={onOpenFile} title="Open image file">
         <FolderOpen size={14} aria-hidden /> Open
       </button>
-      <button type="button" className="paint-toolbar__btn" onClick={onExport} title="Export (Ctrl+S)">
+      {onSave && (
+        <button type="button" className="paint-toolbar__btn" onClick={onSave} title="Save to workspace file (Ctrl+S)">
+          <Save size={14} aria-hidden /> Save
+        </button>
+      )}
+      <button type="button" className="paint-toolbar__btn" onClick={onExport} title="Export">
         <Download size={14} aria-hidden /> Export
       </button>
       <button

@@ -39,6 +39,7 @@ import {
   looksLikeMarkdown,
   importHtml,
   importDocx,
+  importDocxBuffer,
   exportMarkdown,
   exportHtml,
   exportDocx,
@@ -53,6 +54,26 @@ import {
 import type { DocCommandContext } from "./commands";
 import type { DocTemplate } from "./templates/index";
 import type { JSONContent } from "@tiptap/react";
+import {
+  usePendingFileOpen,
+  writeTextToHandle,
+  writeBlobToHandle,
+  type OpenedFile,
+} from "~/lib/workspace";
+
+type DocFormat = "md" | "html" | "txt" | "docx";
+
+function docFormatFromName(name: string): DocFormat {
+  const lower = name.toLowerCase();
+  if (lower.endsWith(".html") || lower.endsWith(".htm")) return "html";
+  if (lower.endsWith(".docx")) return "docx";
+  if (lower.endsWith(".txt")) return "txt";
+  return "md";
+}
+
+function stripExt(name: string): string {
+  return name.replace(/\.[^./\\]+$/, "");
+}
 
 // ── Inner editor (recreated when Bucket-B settings change) ────────────────────
 
@@ -200,6 +221,55 @@ function DocEditorCore({
     return () => clearInterval(id);
   }, [editor, settings.behaviour.versionIntervalMin]);
 
+  // ── Workspace: open a file handed off from the folder sidebar ───────────────
+  const wsHandleRef = useRef<FileSystemFileHandle | null>(null);
+  const wsFormatRef = useRef<DocFormat>("md");
+  const [pendingWs, setPendingWs] = useState<OpenedFile | null>(null);
+  usePendingFileOpen("docs", (opened) => setPendingWs(opened));
+
+  useEffect(() => {
+    if (!editor || !pendingWs) return;
+    const opened = pendingWs;
+    setPendingWs(null);
+    void (async () => {
+      const fmt = docFormatFromName(opened.name);
+      if (fmt === "docx") {
+        await importDocxBuffer(editor, await opened.file.arrayBuffer());
+      } else if (fmt === "html") {
+        await importHtml(editor, await opened.file.text());
+      } else {
+        await importMarkdown(editor, await opened.file.text());
+      }
+      wsHandleRef.current = opened.handle;
+      wsFormatRef.current = fmt;
+      setTitle(stripExt(opened.name));
+      scheduleAutosave();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor, pendingWs]);
+
+  // Write current content back to the workspace file handle. Returns false when
+  // no workspace file is open (caller falls back to download).
+  const saveToWorkspace = async (): Promise<boolean> => {
+    const handle = wsHandleRef.current;
+    if (!editor || !handle) return false;
+    switch (wsFormatRef.current) {
+      case "html":
+        await writeTextToHandle(handle, exportHtml(editor, titleRef.current, settings));
+        break;
+      case "docx": {
+        const { jsonToDocxBlob } = await import("./docx-mapper");
+        await writeBlobToHandle(handle, await jsonToDocxBlob(editor.getJSON(), titleRef.current));
+        break;
+      }
+      default:
+        await writeTextToHandle(handle, await exportMarkdown(editor));
+    }
+    return true;
+  };
+  const saveWsRef = useRef(saveToWorkspace);
+  saveWsRef.current = saveToWorkspace;
+
   // ── handleDocFileAction — used by the command palette ───────────────────────
   async function handleDocFileAction(action: string) {
     if (!editor) return;
@@ -231,6 +301,14 @@ function DocEditorCore({
         if (dirty && !confirm("Discard current document and import a Word file?")) return;
         await importDocx(editor);
         scheduleAutosave();
+        break;
+      }
+      case "save": {
+        const saved = await saveToWorkspace();
+        if (!saved) {
+          const md = await exportMarkdown(editor);
+          downloadFile(md, filenameFromTitle(titleRef.current, "md"), "text/markdown");
+        }
         break;
       }
       case "save-md": {
@@ -373,6 +451,7 @@ function DocEditorCore({
       if (mod && e.key === "s") {
         e.preventDefault();
         flush();
+        void saveWsRef.current();
       }
     }
     window.addEventListener("keydown", handleKeyDown);
