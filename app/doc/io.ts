@@ -433,7 +433,14 @@ export function downloadBinary(
 export async function importDocx(editor: Editor): Promise<void> {
   const buf = await pickDocxBuffer();
   if (!buf) return;
+  await importDocxBuffer(editor, buf);
+}
 
+/** Convert an already-loaded .docx ArrayBuffer into editor content. */
+export async function importDocxBuffer(
+  editor: Editor,
+  buf: ArrayBuffer,
+): Promise<void> {
   const [mammoth, { default: DOMPurify }] = await Promise.all([
     import("mammoth"),
     import("dompurify"),

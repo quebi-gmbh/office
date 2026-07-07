@@ -33,10 +33,11 @@ import {
   exportPng,
 } from "~/lib/code-editor/io";
 import type { FileState } from "~/lib/code-editor/io";
-import { langById, noLanguage } from "~/lib/code-editor/languages";
+import { langById, langFromFilename, noLanguage } from "~/lib/code-editor/languages";
 import type { Lang } from "~/lib/code-editor/languages";
 import { LANG_STORAGE_KEY } from "~/lib/code-editor/lang-storage";
 import { takeCodeHandoff } from "~/lib/code-handoff";
+import { usePendingFileOpen } from "~/lib/workspace";
 
 const DRAFT_KEY = "office:code:draft";
 
@@ -149,6 +150,14 @@ function CodeEditor() {
     },
     [setLanguage],
   );
+
+  // ── Workspace: open a file handed off from the folder sidebar ──────────────
+  usePendingFileOpen("code", async ({ handle, name, file }) => {
+    const text = await file.text();
+    openDocument(text, langFromFilename(name), name, handle);
+    setLoaded(true);
+    showToast(`Opened ${name}`);
+  });
 
   // ── I/O action dispatcher ─────────────────────────────────────────────────
   const handleFileAction = useCallback(
