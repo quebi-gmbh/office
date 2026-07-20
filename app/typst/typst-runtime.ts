@@ -50,25 +50,43 @@ let initPromise: Promise<typeof $typst> | null = null;
  */
 export function getTypst(): Promise<typeof $typst> {
   if (!configured) {
-    // In-browser package registry: lets documents `#import "@preview/…"`.
-    // Packages are fetched on demand from packages.typst.org (CORS-enabled)
-    // and cached in this in-memory access model for the session. This is the
-    // only feature that reaches the network at compile time, and only when a
-    // document actually imports a package.
-    const packageStore = new MemoryAccessModel();
     $typst.setCompilerInitOptions({
       getModule: () => compilerWasmUrl,
       beforeBuild: [
         // Self-host: don't pull the default font pack off jsdelivr.
         initOptions.disableDefaultFontAssets(),
         loadFonts(FONT_URLS),
-        initOptions.withAccessModel(packageStore),
-        initOptions.withPackageRegistry(
-          new FetchPackageRegistry(packageStore),
-        ),
       ],
     });
     $typst.setRendererInitOptions({ getModule: () => rendererWasmUrl });
+
+    // In-browser package registry so documents can `#import "@preview/…"`.
+    // Packages are fetched on demand from packages.typst.org (CORS-enabled)
+    // and cached in this in-memory access model for the session — the only
+    // compile-time network access, and only when a document imports a package.
+    //
+    // This MUST go through `.use()` (not setCompilerInitOptions.beforeBuild):
+    // the snippet auto-injects its own default registry unless it sees a
+    // registered provider whose key mentions "access-model"/"package-registry".
+    // Adding our own via beforeBuild would let both run and set the access
+    // model twice ("already set some access model before").
+    const packageStore = new MemoryAccessModel();
+    $typst.use(
+      {
+        key: "access-model",
+        forRoles: ["compiler"],
+        provides: [initOptions.withAccessModel(packageStore)],
+      },
+      {
+        key: "package-registry",
+        forRoles: ["compiler"],
+        provides: [
+          initOptions.withPackageRegistry(
+            new FetchPackageRegistry(packageStore),
+          ),
+        ],
+      },
+    );
     configured = true;
   }
   if (!initPromise) {
