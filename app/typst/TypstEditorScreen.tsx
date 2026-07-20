@@ -26,11 +26,13 @@ import { STARTER_DOC } from "./starter";
 import { typst } from "./typst-language";
 import {
   buildSections,
+  fractionToOffset,
   offsetToFraction,
   sectionBand,
   sectionIndexForOffset,
   type Section,
 } from "./sync-map";
+import { setSyncLine, syncHighlight } from "./sync-highlight";
 import {
   downloadBlob,
   hashToSource,
@@ -106,6 +108,7 @@ export function TypstEditorScreen() {
   const domHandleRef = useRef<DomHandle | null>(null);
   const sectionsRef = useRef<Section[]>([]);
   const syncingRef = useRef(false);
+  const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const syncEnabledRef = useRef(syncEnabled);
   syncEnabledRef.current = syncEnabled;
 
@@ -303,6 +306,7 @@ export function TypstEditorScreen() {
     () => [
       typst(),
       oneDark,
+      syncHighlight(),
       keymap.of([
         {
           key: "Mod-Enter",
@@ -430,6 +434,140 @@ export function TypstEditorScreen() {
     };
   }, []);
 
+  // Reveal + transiently highlight the section of the source at a given
+  // fraction of the document, and show the matching band in the preview.
+  const revealSourceAtFraction = useCallback((fraction: number) => {
+    const view = editorViewRef.current;
+    if (!view) return;
+    const sections = sectionsRef.current;
+    if (sections.length === 0) return;
+    const docLen = Math.max(1, view.state.doc.length);
+    const idx = sectionIndexForOffset(
+      sections,
+      fractionToOffset(fraction, docLen),
+    );
+    const section = sections[idx];
+    const line = view.state.doc.lineAt(Math.min(section.start, docLen));
+    view.dispatch({
+      effects: [
+        EditorView.scrollIntoView(line.from, { y: "center" }),
+        setSyncLine.of(line.from),
+      ],
+    });
+    const { top, bottom } = sectionBand(section, docLen);
+    setBand({ top, height: Math.max(0.015, bottom - top) });
+    if (highlightTimer.current) clearTimeout(highlightTimer.current);
+    highlightTimer.current = setTimeout(() => {
+      editorViewRef.current?.dispatch({ effects: setSyncLine.of(null) });
+    }, 1600);
+  }, []);
+
+  // Compute a [0,1] fraction of the whole document for a target inside the
+  // preview, from typst's page list (each `.typst-page` carries its height).
+  const pageTargetToFraction = useCallback(
+    (container: HTMLElement, page: number, y: number): number => {
+      const pages = Array.from(
+        container.querySelectorAll<HTMLElement>(".typst-page"),
+      );
+      let total = 0;
+      let before = 0;
+      pages.forEach((p, i) => {
+        const h = parseFloat(p.getAttribute("data-page-height") || "0");
+        if (i < page - 1) before += h;
+        total += h;
+      });
+      return total > 0 ? Math.max(0, Math.min(1, (before + y) / total)) : 0;
+    },
+    [],
+  );
+
+  // Scroll the preview to an in-document location (1-based page + y in pt), and
+  // follow in the editor when sync is on.
+  const jumpToDocLocation = useCallback(
+    (page: number, y: number) => {
+      const container = previewScrollRef.current;
+      if (!container) return;
+      const pages = container.querySelectorAll<HTMLElement>(".typst-page");
+      const pageEl = pages[page - 1];
+      if (pageEl) {
+        const pageHeightPt = parseFloat(
+          pageEl.getAttribute("data-page-height") || "0",
+        );
+        const pageRect = pageEl.getBoundingClientRect();
+        const cRect = container.getBoundingClientRect();
+        const scale = pageHeightPt > 0 ? pageRect.height / pageHeightPt : 1;
+        const targetTop =
+          pageRect.top - cRect.top + container.scrollTop + y * scale;
+        withSyncGuard(() =>
+          container.scrollTo({
+            top: Math.max(0, targetTop - container.clientHeight * 0.25),
+            behavior: "smooth",
+          }),
+        );
+      }
+      if (syncEnabledRef.current) {
+        revealSourceAtFraction(pageTargetToFraction(container, page, y));
+      }
+    },
+    [revealSourceAtFraction, pageTargetToFraction, withSyncGuard],
+  );
+
+  // Wire typst's internal reference links. The SVG emits, per cross-reference,
+  // `<a onclick="handleTypstLocation(this, page, x, y); return false">`. We
+  // (1) provide the global it calls, and (2) also intercept clicks directly by
+  // parsing that attribute — belt-and-braces, since inline handlers injected via
+  // innerHTML don't always fire for SVG anchors.
+  useEffect(() => {
+    const win = window as unknown as Record<string, unknown>;
+    win.handleTypstLocation = (
+      _elem: unknown,
+      page: number,
+      _x: number,
+      y: number,
+    ) => jumpToDocLocation(page, y);
+
+    const container = previewScrollRef.current;
+    const CALL_RE =
+      /handleTypstLocation\(\s*this\s*,\s*([\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*\)/;
+    const onClick = (e: MouseEvent) => {
+      const target = e.target as Element | null;
+      const anchor = target?.closest?.("a");
+      const onclick = anchor?.getAttribute("onclick");
+      if (!onclick) return;
+      const m = CALL_RE.exec(onclick);
+      if (!m) return;
+      e.preventDefault();
+      jumpToDocLocation(Number(m[1]), Number(m[3]));
+    };
+    container?.addEventListener("click", onClick);
+    return () => {
+      container?.removeEventListener("click", onClick);
+      if (win.handleTypstLocation) delete win.handleTypstLocation;
+    };
+  }, [jumpToDocLocation, previewMode, status.kind]);
+
+  // Preview text selection → reveal the corresponding section in the editor.
+  useEffect(() => {
+    const container = previewScrollRef.current;
+    if (!container) return;
+    const onPointerUp = () => {
+      if (!syncEnabledRef.current) return;
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
+      const range = sel.getRangeAt(0);
+      if (!container.contains(range.commonAncestorContainer)) return;
+      const rect = range.getBoundingClientRect();
+      if (!rect || (rect.top === 0 && rect.height === 0)) return;
+      const cRect = container.getBoundingClientRect();
+      const yInContainer = rect.top - cRect.top + container.scrollTop;
+      const fraction =
+        container.scrollHeight > 0 ? yInContainer / container.scrollHeight : 0;
+      revealSourceAtFraction(fraction);
+    };
+    container.addEventListener("pointerup", onPointerUp);
+    return () => container.removeEventListener("pointerup", onPointerUp);
+  }, [previewMode, status.kind, revealSourceAtFraction]);
+
   const busy = status.kind === "loading" || status.kind === "compiling";
 
   return (
@@ -484,7 +622,7 @@ export function TypstEditorScreen() {
             <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium transition hover:border-accent/40 [&::-webkit-details-marker]:hidden">
               <MoreHorizontal size={15} aria-hidden /> Export
             </summary>
-            <div className="absolute right-0 z-20 mt-1 w-48 overflow-hidden rounded-lg border border-border bg-card py-1 shadow-lg">
+            <div className="absolute right-0 z-20 mt-1 w-48 overflow-hidden rounded-lg border border-border bg-bg py-1 shadow-lg">
               {wsFileName && (
                 <MenuItem onClick={() => void saveToWorkspace()}>
                   Save to {wsFileName}

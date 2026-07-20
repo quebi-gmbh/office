@@ -65,7 +65,7 @@ export const lightTheme = CMEditorView.theme(
       background: "color-mix(in srgb, var(--color-accent) 45%, transparent)",
     },
     ".cm-tooltip": {
-      background: "var(--color-card)",
+      background: "var(--color-bg)",
       border: "1px solid var(--color-border)",
       boxShadow: "0 4px 12px rgba(0,0,0,.12)",
     },
@@ -74,7 +74,7 @@ export const lightTheme = CMEditorView.theme(
       color: "var(--color-fg)",
     },
     ".cm-panels": {
-      background: "var(--color-card)",
+      background: "var(--color-bg)",
       color: "var(--color-fg)",
       borderTop: "1px solid var(--color-border)",
     },
