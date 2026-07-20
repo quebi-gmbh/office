@@ -30,6 +30,7 @@ import { invalidateDoc, probePassword } from "~/pdf/lib/thumb-cache";
 import type { PasswordErrorKind } from "~/pdf/io/pdfjs";
 import { pickPdfFiles, fetchPdfFromUrl, isPdfFile } from "~/pdf/io/load";
 import { downloadBytes, suffixedName } from "~/pdf/io/save";
+import { usePendingFileOpen, writeBlob, type WsFileRef } from "~/lib/workspace";
 
 import { PagesPanel } from "~/pdf/ui/panels/PagesPanel";
 import { MergePanel } from "~/pdf/ui/panels/MergePanel";
@@ -59,7 +60,27 @@ export function PdfApp() {
   const dropRef = useRef<HTMLDivElement>(null);
   const { show: showToast, ToastContainer } = useToast();
 
+  // Workspace file ref per doc opened from the sidebar; Save writes bytes back.
+  const wsRefs = useRef<Map<string, WsFileRef>>(new Map());
+
   const activeDoc = docs.find((d) => d.id === activeDocId) ?? null;
+
+  // ── Workspace: open a PDF handed off from the folder sidebar ───────────────
+  usePendingFileOpen("pdf", async ({ ref, name, file }) => {
+    setBusy(true);
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const created = await createDoc(name, bytes);
+      setDocs((prev) => [...prev, created]);
+      setActiveDocId(created.id);
+      wsRefs.current.set(created.id, ref);
+      showToast(`Opened ${name}`);
+    } catch (e) {
+      showToast(`Couldn't open ${name}: ${(e as Error).message}`, "error");
+    } finally {
+      setBusy(false);
+    }
+  });
 
   // Default to the Pages panel as soon as a doc is open.
   useEffect(() => {
@@ -170,6 +191,14 @@ export function PdfApp() {
 
   const saveActive = useCallback(() => {
     if (!activeDoc) return;
+    const ref = wsRefs.current.get(activeDoc.id);
+    if (ref) {
+      const bytes = activeDoc.bytes;
+      void writeBlob(ref, new Blob([bytes as BlobPart], { type: "application/pdf" }))
+        .then(() => showToast(`Saved ${activeDoc.name}`))
+        .catch((e) => showToast(`Save failed: ${(e as Error).message}`, "error"));
+      return;
+    }
     downloadBytes(activeDoc.bytes, suffixedName(activeDoc.name));
     showToast(`Saved ${suffixedName(activeDoc.name)}`);
   }, [activeDoc, showToast]);

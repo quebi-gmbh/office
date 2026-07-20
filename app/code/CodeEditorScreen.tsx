@@ -37,7 +37,7 @@ import { langById, langFromFilename, noLanguage } from "~/lib/code-editor/langua
 import type { Lang } from "~/lib/code-editor/languages";
 import { LANG_STORAGE_KEY } from "~/lib/code-editor/lang-storage";
 import { takeCodeHandoff } from "~/lib/code-handoff";
-import { usePendingFileOpen } from "~/lib/workspace";
+import { usePendingFileOpen, writeText, type WsFileRef } from "~/lib/workspace";
 
 const DRAFT_KEY = "office:code:draft";
 
@@ -58,6 +58,9 @@ function CodeEditor() {
     dirty: false,
   });
   const editorContainerRef = useRef<HTMLDivElement>(null);
+  // Workspace file ref (local or Drive) when the current doc came from the
+  // sidebar; save writes back through its provider.
+  const wsRef = useRef<WsFileRef | null>(null);
   const ctrlKPendingRef = useRef(false);
   const { show: showToast, ToastContainer } = useToast();
 
@@ -152,9 +155,10 @@ function CodeEditor() {
   );
 
   // ── Workspace: open a file handed off from the folder sidebar ──────────────
-  usePendingFileOpen("code", async ({ handle, name, file }) => {
+  usePendingFileOpen("code", async ({ ref, name, file }) => {
     const text = await file.text();
-    openDocument(text, langFromFilename(name), name, handle);
+    wsRef.current = ref;
+    openDocument(text, langFromFilename(name), name);
     setLoaded(true);
     showToast(`Opened ${name}`);
   });
@@ -166,7 +170,10 @@ function CodeEditor() {
         case "open": {
           if (fileState.dirty && !confirm("Discard current changes?")) break;
           const result = await openFile();
-          if (result) openDocument(result.text, result.lang, result.name, result.handle);
+          if (result) {
+            wsRef.current = null;
+            openDocument(result.text, result.lang, result.name, result.handle);
+          }
           break;
         }
         case "open-url": {
@@ -190,7 +197,11 @@ function CodeEditor() {
             }
           }
           const text = applyExportTransforms(value, settings, activeLang);
-          if (fileState.handle) {
+          if (wsRef.current) {
+            await writeText(wsRef.current, text);
+            setFileState((s) => ({ ...s, dirty: false }));
+            showToast("Saved");
+          } else if (fileState.handle) {
             await saveToHandle(text, fileState.handle);
             setFileState((s) => ({ ...s, dirty: false }));
             showToast("Saved");

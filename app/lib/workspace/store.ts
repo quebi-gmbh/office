@@ -1,25 +1,29 @@
 /**
- * Reactive store for the workspace folder + the tool-handoff channel.
+ * Reactive store for the workspace (local folder or Google Drive) plus the
+ * tool-handoff channel.
  *
  * Two concerns live here:
- *  1. The current folder (root handle, file tree, load status) — observed by the
- *     sidebar via `useWorkspace()`.
+ *  1. The current workspace (root ref, file tree, load status, source) — observed
+ *     by the sidebar via `useWorkspace()`.
  *  2. A one-shot "pending open" handoff: when the user clicks a file the sidebar
- *     stashes its handle here, navigates to the tool route, and the tool
- *     consumes it on mount (`consumePendingOpen`).
+ *     stashes its ref here, navigates to the tool route, and the tool consumes it
+ *     on mount (`consumePendingOpen`).
+ *
+ * All backend specifics go through `WorkspaceProvider` (see `provider.ts`); this
+ * store is source-agnostic.
  */
 import { useSyncExternalStore } from "react";
+import { driveConfigured } from "./drive/config";
 import {
-  clearPersistedRootHandle,
-  loadPersistedRootHandle,
-  persistRootHandle,
-  pickDirectory,
-  readDirectoryTree,
-  supportsFileSystemAccess,
-  verifyPermission,
-  type WorkspaceEntry,
-} from "./fs";
+  clearPersistedWorkspace,
+  loadPersistedWorkspace,
+  persistWorkspace,
+  type PersistedWorkspace,
+} from "./persist";
+import { getProvider } from "./provider";
+import { supportsFileSystemAccess } from "./fs";
 import type { ToolId } from "./routing";
+import type { WorkspaceEntry, WsDirRef, WsFileRef, WsSource } from "./types";
 
 export type WorkspaceStatus =
   | "idle" // no folder open
@@ -29,8 +33,12 @@ export type WorkspaceStatus =
   | "error"; // something threw
 
 export interface WorkspaceState {
+  /** Any backend usable at all (local supported OR Drive configured). */
   supported: boolean;
+  localSupported: boolean;
+  driveSupported: boolean;
   status: WorkspaceStatus;
+  source: WsSource | null;
   rootName: string | null;
   tree: WorkspaceEntry[];
   error: string | null;
@@ -40,11 +48,17 @@ export interface WorkspaceState {
   pendingNonce: number;
 }
 
-let root: FileSystemDirectoryHandle | null = null;
+let root: WsDirRef | null = null;
+
+const localSupported = supportsFileSystemAccess();
+const driveSupported = driveConfigured();
 
 let state: WorkspaceState = {
-  supported: supportsFileSystemAccess(),
+  supported: localSupported || driveSupported,
+  localSupported,
+  driveSupported,
   status: "idle",
+  source: null,
   rootName: null,
   tree: [],
   error: null,
@@ -74,7 +88,10 @@ function getSnapshot(): WorkspaceState {
 
 const serverSnapshot: WorkspaceState = {
   supported: false,
+  localSupported: false,
+  driveSupported: false,
   status: "idle",
+  source: null,
   rootName: null,
   tree: [],
   error: null,
@@ -91,70 +108,135 @@ export function useWorkspace(): WorkspaceState {
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 }
 
-// ── Loading a folder ──────────────────────────────────────────────────────────
+// ── Loading a workspace ────────────────────────────────────────────────────────
 
-async function loadTree(handle: FileSystemDirectoryHandle) {
-  root = handle;
-  set({ status: "loading", rootName: handle.name, error: null });
+async function loadTree(rootRef: WsDirRef) {
+  root = rootRef;
+  set({
+    status: "loading",
+    source: rootRef.source,
+    rootName: rootRef.name,
+    error: null,
+  });
   try {
-    const tree = await readDirectoryTree(handle);
+    const provider = await getProvider(rootRef.source);
+    const tree = await provider.listTree(rootRef);
     set({ status: "ready", tree });
   } catch (e) {
     set({ status: "error", error: e instanceof Error ? e.message : String(e) });
   }
 }
 
-/** Prompt for a folder, remember it, and list its files. */
-export async function openFolder(): Promise<void> {
-  if (!state.supported) return;
-  const handle = await pickDirectory();
-  if (!handle) return; // cancelled
-  await persistRootHandle(handle).catch(() => {});
-  await loadTree(handle);
+function toPersisted(rootRef: WsDirRef): PersistedWorkspace {
+  return rootRef.source === "local"
+    ? { source: "local", handle: rootRef.handle }
+    : { source: "drive", folderId: rootRef.folderId, name: rootRef.name };
 }
 
-/** Re-open the folder from a previous visit (re-requests permission). */
-export async function reopenLastFolder(): Promise<boolean> {
-  if (!state.supported) return false;
-  const handle = await loadPersistedRootHandle();
-  if (!handle) return false;
-  const ok = await verifyPermission(handle, true);
-  if (!ok) {
-    set({ status: "denied", rootName: handle.name });
+/** Prompt for a workspace from `source`, remember it, and list its files. */
+export async function openWorkspace(source: WsSource): Promise<void> {
+  const provider = await getProvider(source);
+  if (!provider.supported()) return;
+  const rootRef = await provider.pickRoot();
+  if (!rootRef) return; // cancelled
+  await persistWorkspace(toPersisted(rootRef)).catch(() => {});
+  await loadTree(rootRef);
+}
+
+/** Re-open the workspace from a previous visit (re-auth / re-permission). */
+export async function reopenLastWorkspace(): Promise<boolean> {
+  const p = await loadPersistedWorkspace();
+  if (!p) return false;
+  const provider = await getProvider(p.source);
+  if (!provider.supported()) return false;
+  const rootRef = await provider.reopen(p);
+  if (!rootRef) {
+    set({ status: "denied", source: p.source, rootName: persistedName(p) });
     return false;
   }
-  await loadTree(handle);
+  await loadTree(rootRef);
   return true;
 }
 
-/** Whether a folder from a previous visit is available to re-open. */
-export async function hasPersistedFolder(): Promise<boolean> {
-  if (!state.supported) return false;
-  return (await loadPersistedRootHandle()) !== null;
+function persistedName(p: PersistedWorkspace): string {
+  return p.source === "local" ? p.handle.name : p.name;
 }
 
-/** Re-read the current folder (after external changes / new files). */
-export async function refreshFolder(): Promise<void> {
+/** Whether a workspace from a previous visit is available to re-open. */
+export async function hasPersistedWorkspace(): Promise<boolean> {
+  return (await loadPersistedWorkspace()) !== null;
+}
+
+/** Re-read the current workspace (after external changes / new files / CRUD). */
+export async function refreshWorkspace(): Promise<void> {
   if (root) await loadTree(root);
 }
 
-/** Close the folder and forget it. */
-export async function closeFolder(): Promise<void> {
+/** Close the workspace and forget it. */
+export async function closeWorkspace(): Promise<void> {
   root = null;
-  await clearPersistedRootHandle().catch(() => {});
-  set({ status: "idle", rootName: null, tree: [], error: null, activePath: null });
+  await clearPersistedWorkspace().catch(() => {});
+  set({
+    status: "idle",
+    source: null,
+    rootName: null,
+    tree: [],
+    error: null,
+    activePath: null,
+  });
 }
 
-export function getRootHandle(): FileSystemDirectoryHandle | null {
+export function getRoot(): WsDirRef | null {
   return root;
+}
+
+// ── File CRUD ──────────────────────────────────────────────────────────────────
+
+export async function createFileIn(
+  parent: WsDirRef,
+  name: string,
+  content?: Blob | string,
+): Promise<WsFileRef> {
+  const provider = await getProvider(parent.source);
+  const ref = await provider.createFile(parent, name, content);
+  await refreshWorkspace();
+  return ref;
+}
+
+export async function createDirIn(
+  parent: WsDirRef,
+  name: string,
+): Promise<WsDirRef> {
+  const provider = await getProvider(parent.source);
+  const ref = await provider.createDir(parent, name);
+  await refreshWorkspace();
+  return ref;
+}
+
+export async function renameEntry(
+  parent: WsDirRef,
+  ref: WsFileRef,
+  newName: string,
+): Promise<void> {
+  const provider = await getProvider(parent.source);
+  await provider.rename(parent, ref, newName);
+  await refreshWorkspace();
+}
+
+export async function removeEntry(
+  parent: WsDirRef,
+  ref: WsFileRef | WsDirRef,
+): Promise<void> {
+  const provider = await getProvider(parent.source);
+  await provider.remove(parent, ref);
+  await refreshWorkspace();
 }
 
 // ── Pending-open handoff ──────────────────────────────────────────────────────
 
 export interface PendingOpen {
   tool: ToolId;
-  name: string;
-  handle: FileSystemFileHandle;
+  ref: WsFileRef;
 }
 
 let pending: PendingOpen | null = null;

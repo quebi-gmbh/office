@@ -28,7 +28,15 @@ jobs:
 
       - run: bun run typecheck
 
+      # Google Drive workspace config. These VITE_* values are PUBLIC (they are
+      # inlined into the client bundle by Vite and secured by authorized-origin /
+      # API-key restrictions, not by secrecy), so they live in repo Actions
+      # *Variables*, not Secrets. The OAuth client_secret is never used client-side.
       - run: bun run build
+        env:
+          VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
+          VITE_GOOGLE_PROJECT_NUMBER: ${{ vars.VITE_GOOGLE_PROJECT_NUMBER }}
+          VITE_GOOGLE_API_KEY: ${{ vars.VITE_GOOGLE_API_KEY }}
 
       # GitHub Pages serves 404.html for any unknown path. React Router emits a
       # __spa-fallback.html that hydrates any route — use it so non-prerendered
