@@ -8,6 +8,7 @@ import {
   Outlet,
   Scripts,
   ScrollRestoration,
+  useLocation,
   useRouteError,
 } from "react-router";
 import "./app.css";
@@ -85,7 +86,15 @@ export function ErrorBoundary() {
   );
 }
 
+/**
+ * Routes whose editor is a wide side-by-side layout and should use the full
+ * viewport width instead of the centered ~1100px reading column.
+ */
+const FULL_WIDTH_ROUTES = new Set(["/typst"]);
+
 export default function App() {
+  const { pathname } = useLocation();
+  const fullWidth = FULL_WIDTH_ROUTES.has(pathname);
   return (
     <div id="root" className="flex min-h-full flex-col">
       <header className="flex items-center justify-between border-b border-border bg-card px-6 py-4">
@@ -128,7 +137,13 @@ export default function App() {
       <div className="flex min-h-0 flex-1">
         <ClientOnly>{() => <WorkspaceSidebar />}</ClientOnly>
         <main className="min-w-0 flex-1 overflow-auto">
-          <div className="mx-auto w-full max-w-[1100px] px-6 py-8">
+          <div
+            className={
+              fullWidth
+                ? "w-full px-6 py-8"
+                : "mx-auto w-full max-w-[1100px] px-6 py-8"
+            }
+          >
             <Suspense
               fallback={
                 <div className="h-32 rounded-xl border border-border bg-card animate-pulse" />
