@@ -23,6 +23,18 @@ async function authHeaders(): Promise<Record<string, string>> {
   return { Authorization: `Bearer ${token}` };
 }
 
+/** Throw an Error carrying the Drive API's own reason (from the JSON body). */
+async function fail(res: Response, what: string): Promise<never> {
+  let reason = "";
+  try {
+    const body = await res.json();
+    reason = body?.error?.message || body?.error?.errors?.[0]?.message || "";
+  } catch {
+    /* non-JSON body */
+  }
+  throw new Error(`${what} (${res.status})${reason ? `: ${reason}` : ""}`);
+}
+
 export interface DriveFileMeta {
   id: string;
   name: string;
@@ -49,7 +61,7 @@ export async function listChildren(folderId: string): Promise<DriveFileMeta[]> {
     });
     if (pageToken) params.set("pageToken", pageToken);
     const res = await fetch(`${API}/files?${params.toString()}`, { headers });
-    if (!res.ok) throw new Error(`Drive list failed (${res.status})`);
+    if (!res.ok) await fail(res, "Drive list failed");
     const json = await res.json();
     out.push(...((json.files as DriveFileMeta[]) ?? []));
     pageToken = json.nextPageToken;
@@ -63,7 +75,7 @@ export async function getFileBlob(fileId: string): Promise<Blob> {
     `${API}/files/${fileId}?alt=media&supportsAllDrives=true`,
     { headers },
   );
-  if (!res.ok) throw new Error(`Drive download failed (${res.status})`);
+  if (!res.ok) await fail(res, "Drive download failed");
   return res.blob();
 }
 
@@ -76,7 +88,7 @@ export async function updateFileMedia(
     `${UPLOAD}/files/${fileId}?uploadType=media&supportsAllDrives=true`,
     { method: "PATCH", headers, body },
   );
-  if (!res.ok) throw new Error(`Drive save failed (${res.status})`);
+  if (!res.ok) await fail(res, "Drive save failed");
 }
 
 /** Create a file's metadata (optionally then upload its content). */
@@ -94,7 +106,7 @@ export async function createFile(
       body: JSON.stringify({ name, parents: [parentId] }),
     },
   );
-  if (!res.ok) throw new Error(`Drive create failed (${res.status})`);
+  if (!res.ok) await fail(res, "Drive create failed");
   const meta = (await res.json()) as DriveFileMeta;
   if (content !== undefined) {
     const blob =
@@ -119,7 +131,7 @@ export async function createFolder(
       body: JSON.stringify({ name, parents: [parentId], mimeType: FOLDER_MIME }),
     },
   );
-  if (!res.ok) throw new Error(`Drive folder create failed (${res.status})`);
+  if (!res.ok) await fail(res, "Drive folder create failed");
   return (await res.json()) as DriveFileMeta;
 }
 
@@ -136,7 +148,7 @@ export async function renameFile(
       body: JSON.stringify({ name }),
     },
   );
-  if (!res.ok) throw new Error(`Drive rename failed (${res.status})`);
+  if (!res.ok) await fail(res, "Drive rename failed");
   return (await res.json()) as DriveFileMeta;
 }
 
@@ -147,7 +159,5 @@ export async function deleteFile(fileId: string): Promise<void> {
     { method: "DELETE", headers },
   );
   // 204 No Content on success.
-  if (!res.ok && res.status !== 204) {
-    throw new Error(`Drive delete failed (${res.status})`);
-  }
+  if (!res.ok && res.status !== 204) await fail(res, "Drive delete failed");
 }

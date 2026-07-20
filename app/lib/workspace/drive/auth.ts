@@ -28,30 +28,52 @@ async function ensureTokenClient(): Promise<any> {
   return tokenClient;
 }
 
+function hasDriveScope(resp: any): boolean {
+  return String(resp?.scope || "")
+    .split(" ")
+    .includes(DRIVE_SCOPE);
+}
+
 /**
  * Return a valid access token, requesting/refreshing as needed. `interactive`
  * controls whether Google may show account/consent UI (needs a user gesture);
  * pass false for a silent refresh attempt.
+ *
+ * If Google issues a token that lacks the Drive scope (e.g. the user previously
+ * authorized this app before the scope was configured), we force a `consent`
+ * prompt once so the new scope is actually granted — otherwise every Drive REST
+ * call would 403.
  */
 export async function getAccessToken(interactive = true): Promise<string> {
   if (accessToken && Date.now() < expiresAt - 60_000) return accessToken;
   const client = await ensureTokenClient();
-  return new Promise<string>((resolve, reject) => {
-    client.callback = (resp: any) => {
-      if (resp.error) {
-        reject(new Error(resp.error_description || resp.error));
-        return;
-      }
-      accessToken = resp.access_token;
-      expiresAt = Date.now() + (Number(resp.expires_in) || 3600) * 1000;
-      resolve(accessToken as string);
-    };
-    try {
-      client.requestAccessToken({ prompt: interactive ? "" : "none" });
-    } catch (e) {
-      reject(e);
-    }
-  });
+
+  const request = (prompt: string): Promise<any> =>
+    new Promise((resolve) => {
+      client.callback = resolve;
+      client.requestAccessToken({ prompt });
+    });
+
+  let resp = await request(interactive ? "" : "none");
+  if (resp.error) {
+    throw new Error(resp.error_description || resp.error);
+  }
+  // Re-consent once if the Drive scope wasn't granted.
+  if (!hasDriveScope(resp) && interactive) {
+    resp = await request("consent");
+    if (resp.error) throw new Error(resp.error_description || resp.error);
+  }
+  if (!hasDriveScope(resp)) {
+    throw new Error(
+      `Google did not grant the "${DRIVE_SCOPE}" scope. Add it under the ` +
+        `OAuth consent screen (APIs & Services → OAuth consent screen → ` +
+        `Data access) and re-authorize.`,
+    );
+  }
+
+  accessToken = resp.access_token;
+  expiresAt = Date.now() + (Number(resp.expires_in) || 3600) * 1000;
+  return accessToken as string;
 }
 
 /** Drop the cached token (e.g. on sign-out / close workspace). */
