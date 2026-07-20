@@ -56,9 +56,10 @@ import type { DocTemplate } from "./templates/index";
 import type { JSONContent } from "@tiptap/react";
 import {
   usePendingFileOpen,
-  writeTextToHandle,
-  writeBlobToHandle,
+  writeText,
+  writeBlob,
   type OpenedFile,
+  type WsFileRef,
 } from "~/lib/workspace";
 
 type DocFormat = "md" | "html" | "txt" | "docx";
@@ -222,7 +223,7 @@ function DocEditorCore({
   }, [editor, settings.behaviour.versionIntervalMin]);
 
   // ── Workspace: open a file handed off from the folder sidebar ───────────────
-  const wsHandleRef = useRef<FileSystemFileHandle | null>(null);
+  const wsHandleRef = useRef<WsFileRef | null>(null);
   const wsFormatRef = useRef<DocFormat>("md");
   const [pendingWs, setPendingWs] = useState<OpenedFile | null>(null);
   usePendingFileOpen("docs", (opened) => setPendingWs(opened));
@@ -240,7 +241,7 @@ function DocEditorCore({
       } else {
         await importMarkdown(editor, await opened.file.text());
       }
-      wsHandleRef.current = opened.handle;
+      wsHandleRef.current = opened.ref;
       wsFormatRef.current = fmt;
       setTitle(stripExt(opened.name));
       scheduleAutosave();
@@ -251,19 +252,19 @@ function DocEditorCore({
   // Write current content back to the workspace file handle. Returns false when
   // no workspace file is open (caller falls back to download).
   const saveToWorkspace = async (): Promise<boolean> => {
-    const handle = wsHandleRef.current;
-    if (!editor || !handle) return false;
+    const ref = wsHandleRef.current;
+    if (!editor || !ref) return false;
     switch (wsFormatRef.current) {
       case "html":
-        await writeTextToHandle(handle, exportHtml(editor, titleRef.current, settings));
+        await writeText(ref, exportHtml(editor, titleRef.current, settings));
         break;
       case "docx": {
         const { jsonToDocxBlob } = await import("./docx-mapper");
-        await writeBlobToHandle(handle, await jsonToDocxBlob(editor.getJSON(), titleRef.current));
+        await writeBlob(ref, await jsonToDocxBlob(editor.getJSON(), titleRef.current));
         break;
       }
       default:
-        await writeTextToHandle(handle, await exportMarkdown(editor));
+        await writeText(ref, await exportMarkdown(editor));
     }
     return true;
   };

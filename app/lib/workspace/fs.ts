@@ -1,35 +1,20 @@
 /**
- * File System Access helpers for the workspace feature.
+ * File System Access helpers for the **local** workspace provider.
  *
- * The workspace lets a user pick a local folder (`showDirectoryPicker`), lists
- * its files in a sidebar, and opens them in the matching tool with a live
- * `FileSystemFileHandle` so edits can be written straight back to disk.
+ * A local workspace lets a user pick a folder (`showDirectoryPicker`), lists its
+ * files in the sidebar, and opens them in the matching tool with a live
+ * `FileSystemFileHandle` (carried inside a `LocalFileRef`) so edits write
+ * straight back to disk.
  *
- * This whole feature depends on the File System Access API, which is
- * Chromium-only (Chrome, Edge, Brave, Arc). Firefox and Safari expose none of
- * `showDirectoryPicker` / writable handles, so the sidebar hides itself there —
- * see `supportsFileSystemAccess()`.
+ * This depends on the File System Access API, which is Chromium-only (Chrome,
+ * Edge, Brave, Arc). Firefox and Safari expose none of `showDirectoryPicker` /
+ * writable handles — see `supportsFileSystemAccess()`.
  */
-import { openStore } from "../../paint/io/idb";
+import type { WorkspaceEntry, LocalDirRef } from "./types";
 
 // The DOM lib types for the File System Access API are incomplete across TS
 // versions, so we narrow through small local casts rather than pull a polyfill.
 /* eslint-disable @typescript-eslint/no-explicit-any */
-
-export type WorkspaceEntry =
-  | {
-      kind: "file";
-      name: string;
-      /** Path relative to the workspace root, e.g. "src/index.ts". */
-      path: string;
-      handle: FileSystemFileHandle;
-    }
-  | {
-      kind: "directory";
-      name: string;
-      path: string;
-      children: WorkspaceEntry[];
-    };
 
 /** True when the current browser supports picking a directory + writable handles. */
 export function supportsFileSystemAccess(): boolean {
@@ -91,6 +76,11 @@ export async function verifyPermission(
   return true;
 }
 
+/** Build a `LocalDirRef` for the workspace root. */
+export function rootDirRef(handle: FileSystemDirectoryHandle): LocalDirRef {
+  return { source: "local", name: handle.name, path: "", handle };
+}
+
 /** Recursively build a sorted tree of the folder's contents. */
 export async function readDirectoryTree(
   dir: FileSystemDirectoryHandle,
@@ -121,20 +111,22 @@ async function walk(
     if (handle.kind === "directory") {
       if (SKIP_DIRS.has(name) || depth >= MAX_DEPTH) continue;
       counter.n++;
-      const children = await walk(
-        handle as FileSystemDirectoryHandle,
+      const dirHandle = handle as FileSystemDirectoryHandle;
+      const children = await walk(dirHandle, path, depth + 1, counter);
+      entries.push({
+        kind: "directory",
+        name,
         path,
-        depth + 1,
-        counter,
-      );
-      entries.push({ kind: "directory", name, path, children });
+        ref: { source: "local", name, path, handle: dirHandle },
+        children,
+      });
     } else {
       counter.n++;
       entries.push({
         kind: "file",
         name,
         path,
-        handle: handle as FileSystemFileHandle,
+        ref: { source: "local", name, path, handle: handle as FileSystemFileHandle },
       });
     }
   }
@@ -149,29 +141,56 @@ function sortEntries(a: WorkspaceEntry, b: WorkspaceEntry): number {
   return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
 }
 
-// ── Persisting the root handle across reloads ─────────────────────────────────
-//
-// A FileSystemDirectoryHandle is structured-cloneable, so it can live in
-// IndexedDB. On the next visit we re-request permission (needs a click) and
-// re-list the folder.
+// ── Local file CRUD (used by the local provider) ─────────────────────────────
 
-const WS_DB = "office-workspace";
-const WS_STORE = "handles";
-const ROOT_KEY = "root";
+/** Create (or overwrite) a file `name` inside `dir` with optional content. */
+export async function localCreateFile(
+  dir: FileSystemDirectoryHandle,
+  name: string,
+  content?: Blob | string,
+): Promise<FileSystemFileHandle> {
+  const handle = await dir.getFileHandle(name, { create: true });
+  if (content !== undefined) {
+    const writable = await handle.createWritable();
+    await writable.write(content);
+    await writable.close();
+  }
+  return handle;
+}
 
-export async function persistRootHandle(
-  handle: FileSystemDirectoryHandle,
+/** Create a subfolder `name` inside `dir`. */
+export async function localCreateDir(
+  dir: FileSystemDirectoryHandle,
+  name: string,
+): Promise<FileSystemDirectoryHandle> {
+  return dir.getDirectoryHandle(name, { create: true });
+}
+
+/** Remove `name` (file or folder) from `dir`. */
+export async function localRemove(
+  dir: FileSystemDirectoryHandle,
+  name: string,
 ): Promise<void> {
-  const store = await openStore(WS_DB, WS_STORE);
-  await store.put(ROOT_KEY, handle);
+  await (dir as any).removeEntry(name, { recursive: true });
 }
 
-export async function loadPersistedRootHandle(): Promise<FileSystemDirectoryHandle | null> {
-  const store = await openStore(WS_DB, WS_STORE);
-  return store.get<FileSystemDirectoryHandle>(ROOT_KEY);
+/**
+ * Rename a file within `dir`. The FS Access API has no atomic rename, so we
+ * copy the bytes to a new handle and delete the old one.
+ */
+export async function localRenameFile(
+  dir: FileSystemDirectoryHandle,
+  oldName: string,
+  newName: string,
+): Promise<FileSystemFileHandle> {
+  const src = await dir.getFileHandle(oldName);
+  const bytes = await (await src.getFile()).arrayBuffer();
+  const dest = await dir.getFileHandle(newName, { create: true });
+  const writable = await dest.createWritable();
+  await writable.write(bytes);
+  await writable.close();
+  await (dir as any).removeEntry(oldName);
+  return dest;
 }
 
-export async function clearPersistedRootHandle(): Promise<void> {
-  const store = await openStore(WS_DB, WS_STORE);
-  await store.delete(ROOT_KEY);
-}
+export { MAX_DEPTH, MAX_ENTRIES, SKIP_DIRS };

@@ -13,6 +13,7 @@ import {
   ZoomOut,
 } from "lucide-react";
 import { compilePdf, compileSvg, getTypst } from "./typst-runtime";
+import { usePendingFileOpen, writeText, type WsFileRef } from "~/lib/workspace";
 import { STARTER_DOC } from "./starter";
 import { typst } from "./typst-language";
 import {
@@ -57,6 +58,8 @@ export function TypstEditorScreen() {
   const [notice, setNotice] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
 
+  const [wsFileName, setWsFileName] = useState<string | null>(null);
+  const wsRef = useRef<WsFileRef | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -206,6 +209,32 @@ export function TypstEditorScreen() {
     setZoom((z) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z * factor)));
   }, []);
 
+  // ── Workspace: open a .typ handed off from the sidebar; save writes source back ─
+  const saveToWorkspace = useCallback(async (): Promise<boolean> => {
+    if (!wsRef.current) return false;
+    try {
+      await writeText(wsRef.current, sourceRef.current);
+      flashNotice(`Saved ${wsFileName ?? ""}`.trim());
+    } catch (e) {
+      flashNotice(`Save failed: ${(e as Error).message}`);
+    }
+    return true;
+  }, [flashNotice, wsFileName]);
+
+  usePendingFileOpen("typst", async ({ ref, name, file }) => {
+    const text = await file.text();
+    wsRef.current = ref;
+    setWsFileName(name);
+    setSource(text);
+  });
+
+  // Ctrl/Cmd-S saves back to the workspace file when one is open, else exports PDF.
+  const saveActionRef = useRef<() => void>(() => {});
+  saveActionRef.current = () => {
+    if (wsRef.current) void saveToWorkspace();
+    else void downloadPdfRef.current();
+  };
+
   // CodeMirror extensions (stable): Typst mode, dark theme, our shortcuts.
   const extensions = useMemo(
     () => [
@@ -224,7 +253,7 @@ export function TypstEditorScreen() {
           key: "Mod-s",
           preventDefault: true,
           run: () => {
-            void downloadPdfRef.current();
+            saveActionRef.current();
             return true;
           },
         },
@@ -288,6 +317,11 @@ export function TypstEditorScreen() {
               <MoreHorizontal size={15} aria-hidden /> Export
             </summary>
             <div className="absolute right-0 z-20 mt-1 w-48 overflow-hidden rounded-lg border border-border bg-card py-1 shadow-lg">
+              {wsFileName && (
+                <MenuItem onClick={() => void saveToWorkspace()}>
+                  Save to {wsFileName}
+                </MenuItem>
+              )}
               <MenuItem onClick={downloadSvg} disabled={!svg}>
                 Download SVG
               </MenuItem>

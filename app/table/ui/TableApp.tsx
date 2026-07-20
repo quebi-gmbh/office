@@ -109,8 +109,9 @@ import {
 } from "~/table/io/import";
 import {
   usePendingFileOpen,
-  writeTextToHandle,
-  writeBlobToHandle,
+  writeText,
+  writeBlob,
+  type WsFileRef,
 } from "~/lib/workspace";
 import { DetectModal, type ImportSource } from "./DetectModal";
 
@@ -210,7 +211,7 @@ export function TableApp() {
   const autosaver = useRef(createAutosaver((at) => setSavedAt(at)));
 
   // Workspace file handle (set when opened from the folder sidebar).
-  const wsHandleRef = useRef<FileSystemFileHandle | null>(null);
+  const wsHandleRef = useRef<WsFileRef | null>(null);
   const wsTargetRef = useRef<string | null>(null);
   const [wsFileName, setWsFileName] = useState<string | null>(null);
   const workbookRef = useRef(workbook);
@@ -792,10 +793,10 @@ export function TableApp() {
   );
 
   // ── Workspace: open a tabular file handed off from the folder sidebar ──────
-  usePendingFileOpen("table", async ({ handle, name, file }) => {
+  usePendingFileOpen("table", async ({ ref, name, file }) => {
     try {
       const src = await sourceFromFile(file);
-      wsHandleRef.current = handle;
+      wsHandleRef.current = ref;
       wsTargetRef.current = exportTargetForName(name);
       const base = stripExt(name);
       const fresh = docFromRows(src.detection.rows, base, src.detection.hasHeader);
@@ -814,9 +815,9 @@ export function TableApp() {
   // Write the current sheet back to the workspace file in its original format.
   // Returns false when no workspace file is open (caller falls back to export).
   const saveToWorkspaceFile = useCallback(async (): Promise<boolean> => {
-    const handle = wsHandleRef.current;
+    const ref = wsHandleRef.current;
     const targetId = wsTargetRef.current;
-    if (!handle || !targetId) return false;
+    if (!ref || !targetId) return false;
     const target = EXPORT_TARGETS.find((t) => t.id === targetId);
     if (!target) return false;
     let exportDoc = doc;
@@ -834,9 +835,9 @@ export function TableApp() {
     };
     try {
       if (target.binary && target.toBlob) {
-        await writeBlobToHandle(handle, await target.toBlob(ctx));
+        await writeBlob(ref, await target.toBlob(ctx));
       } else if (target.toText) {
-        await writeTextToHandle(handle, target.toText(ctx));
+        await writeText(ref, target.toText(ctx));
       }
       showToast(`Saved ${wsFileName ?? ""}`.trim());
     } catch (e) {

@@ -30,7 +30,7 @@ import {
   rotateSession,
   clearAllAutosaveData,
 } from "~/paint/io/autosave";
-import { usePendingFileOpen, writeBlobToHandle } from "~/lib/workspace";
+import { usePendingFileOpen, writeBlob, type WsFileRef } from "~/lib/workspace";
 
 type ImageMime = "image/png" | "image/jpeg" | "image/webp";
 
@@ -60,7 +60,7 @@ export function PaintApp() {
   const autosaveRef = useRef(createAutosave());
 
   // Workspace file handle (set when opened from the folder sidebar).
-  const wsHandleRef = useRef<FileSystemFileHandle | null>(null);
+  const wsHandleRef = useRef<WsFileRef | null>(null);
   const wsMimeRef = useRef<ImageMime>("image/png");
   const [wsFileName, setWsFileName] = useState<string | null>(null);
 
@@ -107,19 +107,19 @@ export function PaintApp() {
   // Write the current canvas back to the workspace file handle, matching the
   // file's original format. Returns false when no workspace file is open.
   async function saveToWorkspaceFile(): Promise<boolean> {
-    const handle = wsHandleRef.current;
-    if (!handle) return false;
+    const ref = wsHandleRef.current;
+    if (!ref) return false;
     const canvas = document.querySelector<HTMLCanvasElement>(".paint-canvas-main");
     if (!canvas) return false;
     const blob = await canvasToBlob(canvas, wsMimeRef.current, 1);
-    await writeBlobToHandle(handle, blob);
+    await writeBlob(ref, blob);
     return true;
   }
 
   // ─── Workspace: open an image handed off from the folder sidebar ───────────
-  usePendingFileOpen("paint", async ({ handle, name, file }) => {
+  usePendingFileOpen("paint", async ({ ref, name, file }) => {
     const bitmap = await fileToImageBitmap(file);
-    wsHandleRef.current = handle;
+    wsHandleRef.current = ref;
     wsMimeRef.current = mimeFromName(name);
     setWsFileName(name);
     replaceWithBitmap(bitmap);

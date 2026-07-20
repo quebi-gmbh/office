@@ -6,13 +6,15 @@
  * .html). A file with no known mapping returns `primary: null`.
  */
 
-export type ToolId = "code" | "docs" | "paint" | "table";
+export type ToolId = "code" | "docs" | "paint" | "table" | "pdf" | "typst";
 
 export const TOOL_PATH: Record<ToolId, string> = {
   code: "/code",
   docs: "/docs",
   paint: "/paint",
   table: "/table",
+  pdf: "/pdf",
+  typst: "/typst",
 };
 
 export const TOOL_LABEL: Record<ToolId, string> = {
@@ -20,6 +22,8 @@ export const TOOL_LABEL: Record<ToolId, string> = {
   docs: "Doc",
   paint: "Paint",
   table: "Table",
+  pdf: "PDF",
+  typst: "Typst",
 };
 
 // Primary tool per extension. Ambiguous extensions get extra entries in
@@ -46,6 +50,11 @@ const PRIMARY: Record<string, ToolId> = {
   xls: "table",
   jsonl: "table",
   ndjson: "table",
+  // ── PDF ──
+  pdf: "pdf",
+  // ── Typst ──
+  typ: "typst",
+  typst: "typst",
   // ── Code / text ──
   txt: "code",
   json: "code",
