@@ -416,7 +416,7 @@ export function Grid({
         onPointerDown={(e) => onHeaderSelect(e, "col", c)}
         onContextMenu={(e) => { e.preventDefault(); onHeaderContext?.({ kind: "col", index: sc(c), x: e.clientX, y: e.clientY }); }}
         className={`group absolute box-border flex cursor-pointer items-center justify-center gap-0.5 border-b border-r border-border text-xs font-medium ${
-          active ? "bg-accent/20 text-fg" : "bg-card text-muted"
+          active ? "bg-[color-mix(in_srgb,var(--color-accent)_20%,var(--color-bg))] text-fg" : "bg-bg text-muted"
         }`}
         style={{ left: ROW_HEADER_WIDTH + colX[c], top: 0, width: colWidth(doc, sc(c)), height: HEADER_HEIGHT }}
       >
@@ -454,7 +454,7 @@ export function Grid({
         onPointerDown={(e) => onHeaderSelect(e, "row", r)}
         onContextMenu={(e) => { e.preventDefault(); onHeaderContext?.({ kind: "row", index: srr, x: e.clientX, y: e.clientY }); }}
         className={`absolute box-border flex cursor-pointer items-center justify-center border-b border-r border-border text-xs ${
-          active ? "bg-accent/20 text-fg" : "bg-card text-muted"
+          active ? "bg-[color-mix(in_srgb,var(--color-accent)_20%,var(--color-bg))] text-fg" : "bg-bg text-muted"
         }`}
         style={{ top: HEADER_HEIGHT + rowY[r], left: 0, width: ROW_HEADER_WIDTH, height: rowHeight(doc, srr) }}
       >
@@ -545,7 +545,7 @@ export function Grid({
         {fr > 0 && <div className="sticky left-0 top-0 z-[22]" style={{ width: 0, height: 0 }}>{frozenRowHeaders}</div>}
 
         {/* Top-left corner */}
-        <div className="sticky left-0 top-0 z-30 box-border border-b border-r border-border bg-card" style={{ width: ROW_HEADER_WIDTH, height: HEADER_HEIGHT }} />
+        <div className="sticky left-0 top-0 z-30 box-border border-b border-r border-border bg-bg" style={{ width: ROW_HEADER_WIDTH, height: HEADER_HEIGHT }} />
       </div>
     </div>
   );

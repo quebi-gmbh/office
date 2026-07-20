@@ -26,7 +26,7 @@ export function useToast() {
           className={`rounded-lg px-4 py-2.5 text-sm shadow-lg pointer-events-auto ${
             m.kind === "error"
               ? "bg-red-600 text-white"
-              : "bg-card border border-border text-fg"
+              : "bg-bg border border-border text-fg"
           }`}
         >
           {m.text}

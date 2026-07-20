@@ -78,7 +78,7 @@ export function NewFileModal({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-sm rounded-xl border border-border bg-card p-4 shadow-xl"
+        className="w-full max-w-sm rounded-xl border border-border bg-bg p-4 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-center justify-between">

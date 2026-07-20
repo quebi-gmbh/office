@@ -268,7 +268,7 @@ function RowMenu({ children }: { children: React.ReactNode }) {
       <summary className="cursor-pointer list-none rounded px-0.5 text-muted opacity-0 hover:text-fg group-hover:opacity-100">
         <MoreVertical size={14} aria-hidden />
       </summary>
-      <div className="absolute right-0 z-10 mt-1 min-w-32 rounded-md border border-border bg-card py-1 shadow-lg">
+      <div className="absolute right-0 z-10 mt-1 min-w-32 rounded-md border border-border bg-bg py-1 shadow-lg">
         {children}
       </div>
     </details>

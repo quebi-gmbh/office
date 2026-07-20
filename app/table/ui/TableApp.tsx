@@ -1160,7 +1160,7 @@ export function TableApp() {
           </div>
         )}
         {isEmptyDoc(doc) && !isDragging && (
-          <div className="pointer-events-none absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-full border border-border bg-card/80 px-3 py-1 text-xs text-muted">
+          <div className="pointer-events-none absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-full border border-border bg-bg px-3 py-1 text-xs text-muted">
             Paste tabular data (Ctrl/Cmd+V), drop a file, or just start typing
           </div>
         )}
@@ -1264,7 +1264,7 @@ export function TableApp() {
       )}
 
       {progress && (
-        <div className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-full border border-accent/40 bg-card px-4 py-2 text-xs text-fg shadow-lg">
+        <div className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-full border border-accent/40 bg-bg px-4 py-2 text-xs text-fg shadow-lg">
           {progress}
         </div>
       )}
