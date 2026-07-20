@@ -68,7 +68,7 @@ export function FileMenu({ onAction }: FileMenuProps) {
       {open && (
         <div
           role="menu"
-          className="absolute left-0 top-full z-30 mt-1 min-w-[200px] rounded-lg border border-border bg-card py-1 shadow-lg"
+          className="absolute left-0 top-full z-30 mt-1 min-w-[200px] rounded-lg border border-border bg-bg py-1 shadow-lg"
         >
           {ITEMS.map((item) => (
             <div key={item.action}>

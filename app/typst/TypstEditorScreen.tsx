@@ -1,27 +1,46 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import CodeMirror from "@uiw/react-codemirror";
-import { keymap } from "@codemirror/view";
+import { EditorView, keymap } from "@codemirror/view";
 import { oneDark } from "@codemirror/theme-one-dark";
 import {
   AlertTriangle,
   Download,
+  Link2,
   Loader2,
   Maximize2,
   MoreHorizontal,
   RefreshCw,
+  Type,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import { compilePdf, compileSvg, getTypst } from "./typst-runtime";
+import {
+  compilePdf,
+  compileSvg,
+  getTypst,
+  renderDomInto,
+  type DomHandle,
+} from "./typst-runtime";
 import { usePendingFileOpen, writeText, type WsFileRef } from "~/lib/workspace";
 import { STARTER_DOC } from "./starter";
 import { typst } from "./typst-language";
+import {
+  buildSections,
+  offsetToFraction,
+  sectionBand,
+  sectionIndexForOffset,
+  type Section,
+} from "./sync-map";
 import {
   downloadBlob,
   hashToSource,
   sourceToHash,
   svgToPngBlob,
 } from "./export-utils";
+
+type PreviewMode = "svg" | "text";
+/** Vertical band [top, height] as fractions of the preview content height. */
+type Band = { top: number; height: number };
 
 const STORAGE_KEY = "typst:source";
 const COMPILE_DEBOUNCE_MS = 400;
@@ -47,6 +66,18 @@ function loadInitialSource(): string {
   }
 }
 
+/** Current scroll position of an element as a fraction [0, 1] of its range. */
+function scrollFraction(el: HTMLElement): number {
+  const range = el.scrollHeight - el.clientHeight;
+  return range > 0 ? el.scrollTop / range : 0;
+}
+
+/** Scroll an element to a fraction [0, 1] of its range. */
+function setScrollFraction(el: HTMLElement, fraction: number): void {
+  const range = el.scrollHeight - el.clientHeight;
+  el.scrollTop = Math.max(0, Math.min(1, fraction)) * range;
+}
+
 export function TypstEditorScreen() {
   const [source, setSource] = useState<string>(loadInitialSource);
   const [svg, setSvg] = useState<string>("");
@@ -58,10 +89,42 @@ export function TypstEditorScreen() {
   const [notice, setNotice] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
 
+  const [syncEnabled, setSyncEnabled] = useState(true);
+  const [previewMode, setPreviewMode] = useState<PreviewMode>("svg");
+  const [band, setBand] = useState<Band | null>(null);
+
   const [wsFileName, setWsFileName] = useState<string | null>(null);
   const wsRef = useRef<WsFileRef | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Scroll-sync + selectable-preview plumbing ─────────────────────────────
+  const editorViewRef = useRef<EditorView | null>(null);
+  const [editorReady, setEditorReady] = useState(false);
+  const previewScrollRef = useRef<HTMLDivElement | null>(null);
+  const domContainerRef = useRef<HTMLDivElement | null>(null);
+  const domHandleRef = useRef<DomHandle | null>(null);
+  const sectionsRef = useRef<Section[]>([]);
+  const syncingRef = useRef(false);
+  const syncEnabledRef = useRef(syncEnabled);
+  syncEnabledRef.current = syncEnabled;
+
+  // Rebuild the section map whenever the source changes.
+  useEffect(() => {
+    sectionsRef.current = buildSections(source);
+  }, [source]);
+
+  // Run a scroll write without it bouncing back through the paired listener.
+  const withSyncGuard = useCallback((fn: () => void) => {
+    if (syncingRef.current) return;
+    syncingRef.current = true;
+    fn();
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        syncingRef.current = false;
+      }),
+    );
+  }, []);
 
   const stale =
     status.kind === "ready" && !!svg && source !== compiledSource;
@@ -262,6 +325,111 @@ export function TypstEditorScreen() {
     [],
   );
 
+  // Update the highlighted section band from the editor's cursor position.
+  const updateBandFromCursor = useCallback((view: EditorView) => {
+    const sections = sectionsRef.current;
+    if (sections.length === 0) {
+      setBand(null);
+      return;
+    }
+    const docLen = Math.max(1, view.state.doc.length);
+    const offset = view.state.selection.main.head;
+    const idx = sectionIndexForOffset(sections, offset);
+    const { top, bottom } = sectionBand(sections[idx], docLen);
+    setBand({ top, height: Math.max(0.015, bottom - top) });
+  }, []);
+
+  // CodeMirror update handler: keep the band in sync, and on pure cursor
+  // navigation (selection changed but not the doc) scroll the preview to match.
+  const onEditorUpdate = useCallback(
+    (vu: { view: EditorView; docChanged: boolean; selectionSet: boolean }) => {
+      if (!vu.selectionSet && !vu.docChanged) return;
+      updateBandFromCursor(vu.view);
+      if (vu.selectionSet && !vu.docChanged && syncEnabledRef.current) {
+        const prev = previewScrollRef.current;
+        if (prev) {
+          const docLen = Math.max(1, vu.view.state.doc.length);
+          const frac = offsetToFraction(
+            vu.view.state.selection.main.head,
+            docLen,
+          );
+          withSyncGuard(() => setScrollFraction(prev, frac));
+        }
+      }
+    },
+    [updateBandFromCursor, withSyncGuard],
+  );
+
+  // Bidirectional viewport scroll sync between the editor and the preview.
+  useEffect(() => {
+    const view = editorViewRef.current;
+    const preview = previewScrollRef.current;
+    if (!view || !preview) return;
+    const editorScroll = view.scrollDOM;
+    const onEditorScroll = () => {
+      if (!syncEnabledRef.current) return;
+      withSyncGuard(() =>
+        setScrollFraction(preview, scrollFraction(editorScroll)),
+      );
+    };
+    const onPreviewScroll = () => {
+      if (!syncEnabledRef.current) return;
+      withSyncGuard(() =>
+        setScrollFraction(editorScroll, scrollFraction(preview)),
+      );
+    };
+    editorScroll.addEventListener("scroll", onEditorScroll, { passive: true });
+    preview.addEventListener("scroll", onPreviewScroll, { passive: true });
+    return () => {
+      editorScroll.removeEventListener("scroll", onEditorScroll);
+      preview.removeEventListener("scroll", onPreviewScroll);
+    };
+    // Re-attach when the editor becomes ready or the preview surface swaps.
+  }, [editorReady, previewMode, status.kind, withSyncGuard]);
+
+  // Selectable-text (DOM render) mode: mount/refresh after each compile, with a
+  // hard fallback to the SVG preview if the experimental renderer throws.
+  useEffect(() => {
+    if (previewMode !== "text") {
+      domHandleRef.current?.dispose();
+      domHandleRef.current = null;
+      return;
+    }
+    if (status.kind !== "ready") return;
+    const container = domContainerRef.current;
+    if (!container) return;
+    let disposed = false;
+    (async () => {
+      try {
+        domHandleRef.current?.dispose();
+        domHandleRef.current = null;
+        const handle = await renderDomInto(container, compiledSource || source);
+        if (disposed) {
+          handle.dispose();
+          return;
+        }
+        domHandleRef.current = handle;
+      } catch {
+        if (!disposed) {
+          flashNotice("Selectable preview unavailable — using image");
+          setPreviewMode("svg");
+        }
+      }
+    })();
+    return () => {
+      disposed = true;
+    };
+    // compiledSource changes once per successful compile.
+  }, [previewMode, status.kind, compiledSource, source, flashNotice]);
+
+  // Tear the DOM mount down on unmount.
+  useEffect(() => {
+    return () => {
+      domHandleRef.current?.dispose();
+      domHandleRef.current = null;
+    };
+  }, []);
+
   const busy = status.kind === "loading" || status.kind === "compiling";
 
   return (
@@ -348,6 +516,11 @@ export function TypstEditorScreen() {
             theme={oneDark}
             height="100%"
             style={{ height: "100%", fontSize: "13px" }}
+            onCreateEditor={(view) => {
+              editorViewRef.current = view;
+              setEditorReady(true);
+            }}
+            onUpdate={onEditorUpdate}
             basicSetup={{
               lineNumbers: true,
               highlightActiveLine: true,
@@ -388,6 +561,35 @@ export function TypstEditorScreen() {
             >
               <Maximize2 size={13} /> Fit width
             </button>
+
+            <div className="ml-auto flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setSyncEnabled((v) => !v)}
+                aria-pressed={syncEnabled}
+                title="Sync scrolling between editor and preview"
+                className={`inline-flex items-center gap-1 rounded px-1.5 py-1 text-xs transition ${
+                  syncEnabled ? "text-accent" : "text-muted hover:text-accent"
+                }`}
+              >
+                <Link2 size={13} /> Sync
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setPreviewMode((m) => (m === "svg" ? "text" : "svg"))
+                }
+                aria-pressed={previewMode === "text"}
+                title="Selectable/copyable text (beta)"
+                className={`inline-flex items-center gap-1 rounded px-1.5 py-1 text-xs transition ${
+                  previewMode === "text"
+                    ? "text-accent"
+                    : "text-muted hover:text-accent"
+                }`}
+              >
+                <Type size={13} /> Selectable
+              </button>
+            </div>
           </div>
 
           {status.kind === "error" && (
@@ -399,23 +601,52 @@ export function TypstEditorScreen() {
             </div>
           )}
 
-          <div className="min-h-0 flex-1 overflow-auto bg-bg p-4">
+          <div
+            ref={previewScrollRef}
+            className="min-h-0 flex-1 overflow-auto bg-bg p-4"
+          >
             {status.kind === "loading" ? (
               <div className="flex h-full items-center justify-center gap-2 text-muted">
                 <Loader2 size={18} className="animate-spin" aria-hidden />
                 Loading the Typst compiler…
               </div>
-            ) : svg ? (
-              <div
-                className="mx-auto [&_svg]:h-auto [&_svg]:w-full [&_svg]:bg-white [&_svg]:shadow-lg"
-                style={{ width: `${zoom * 100}%` }}
-                // Produced by our own local WASM compiler from the user's own
-                // input — no external/untrusted HTML.
-                dangerouslySetInnerHTML={{ __html: svg }}
-              />
             ) : (
-              <div className="flex h-full items-center justify-center text-muted">
-                No preview yet.
+              <div
+                className="relative mx-auto"
+                style={{ width: `${zoom * 100}%` }}
+              >
+                {/* Section highlight band (proportional to source position). */}
+                {syncEnabled && band && (
+                  <div
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-x-0 z-10 rounded bg-accent/10 ring-1 ring-accent/40 transition-all"
+                    style={{
+                      top: `${band.top * 100}%`,
+                      height: `${band.height * 100}%`,
+                    }}
+                  />
+                )}
+                {/* Selectable text (DOM render mode). Hidden in svg mode. */}
+                <div
+                  ref={domContainerRef}
+                  className={`[&_svg]:h-auto [&_svg]:w-full [&_svg]:bg-white [&_svg]:shadow-lg ${
+                    previewMode === "text" ? "" : "hidden"
+                  }`}
+                />
+                {/* Image (SVG string) preview. */}
+                {previewMode === "svg" &&
+                  (svg ? (
+                    <div
+                      className="[&_svg]:h-auto [&_svg]:w-full [&_svg]:bg-white [&_svg]:shadow-lg"
+                      // Produced by our own local WASM compiler from the user's
+                      // own input — no external/untrusted HTML.
+                      dangerouslySetInnerHTML={{ __html: svg }}
+                    />
+                  ) : (
+                    <div className="py-16 text-center text-muted">
+                      No preview yet.
+                    </div>
+                  ))}
               </div>
             )}
           </div>

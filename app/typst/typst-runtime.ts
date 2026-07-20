@@ -142,3 +142,51 @@ export function compilePdf(source: string): Promise<Uint8Array> {
     return pdf;
   });
 }
+
+/** A mounted DOM document handle we can dispose before re-rendering. */
+export interface DomHandle {
+  dispose(): void;
+}
+
+/**
+ * Render `source` into `container` using typst.ts's DOM render mode, which
+ * produces real DOM (with a selectable/copyable text layer) instead of an
+ * inert SVG string. Returns a handle whose `dispose()` tears the mount down.
+ *
+ * This is experimental: the DOM renderer's exact behaviour isn't something we
+ * can guarantee across typst.ts versions, so callers should wrap this in a
+ * try/catch and fall back to the SVG preview on failure.
+ */
+export function renderDomInto(
+  container: HTMLElement,
+  source: string,
+): Promise<DomHandle> {
+  return serialize(async () => {
+    const typst = await getTypst();
+    const vector = await typst.vector({ mainContent: source });
+    if (!vector) throw new Error("Compilation produced no output.");
+    const renderer = await typst.getRenderer();
+    // `renderDom` mounts into the container and returns a document object that
+    // exposes a dispose()/cleanup path. The public type only allows a
+    // pre-created `renderSession`, but the implementation also accepts
+    // `artifactContent` (it creates + manages the session itself), which is
+    // what we want for a fresh full re-mount on each compile.
+    const doc = (await renderer.renderDom({
+      container,
+      artifactContent: vector,
+    } as unknown as Parameters<typeof renderer.renderDom>[0])) as unknown as {
+      dispose?: () => void;
+    };
+    return {
+      dispose() {
+        try {
+          doc.dispose?.();
+        } catch {
+          /* best-effort */
+        }
+        // Ensure the container is emptied even if dispose is a no-op.
+        container.replaceChildren();
+      },
+    };
+  });
+}
