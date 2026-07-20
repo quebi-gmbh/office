@@ -61,7 +61,7 @@ const tools: Tool[] = [
   {
     to: "/typst",
     name: "Typst editor",
-    blurb: "Write Typst markup with a live preview and one-click PDF export. The compiler runs in your browser via WebAssembly — nothing is uploaded.",
+    blurb: "Write Typst with syntax highlighting and a live preview; export to PDF, SVG, or PNG and share by link. The compiler runs in your browser via WebAssembly — nothing is uploaded.",
     status: "live",
     icon: <PenLine size={20} aria-hidden />,
   },
