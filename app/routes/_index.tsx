@@ -1,5 +1,12 @@
 import type { ReactNode } from "react";
-import { Code2, FileText, FileType, Paintbrush, Table2 } from "lucide-react";
+import {
+  Code2,
+  FileText,
+  FileType,
+  Paintbrush,
+  PenLine,
+  Table2,
+} from "lucide-react";
 import { Link } from "react-router";
 import { seo } from "~/lib/seo";
 
@@ -50,6 +57,13 @@ const tools: Tool[] = [
     blurb: "Merge, split, rotate, crop, watermark, stamp, fill forms, edit metadata, extract text, build PDFs from images — all client-side via pdf-lib + pdfjs.",
     status: "live",
     icon: <FileType size={20} aria-hidden />,
+  },
+  {
+    to: "/typst",
+    name: "Typst editor",
+    blurb: "Write Typst markup with a live preview and one-click PDF export. The compiler runs in your browser via WebAssembly — nothing is uploaded.",
+    status: "live",
+    icon: <PenLine size={20} aria-hidden />,
   },
 ];
 

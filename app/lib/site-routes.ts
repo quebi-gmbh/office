@@ -78,6 +78,14 @@ export const ROUTES: RouteMeta[] = [
     description:
       "Client-side PDF tools — merge, split, crop, rotate, watermark, fill forms, edit metadata, and extract text or images. Your files never leave the browser.",
   },
+  {
+    path: "/typst",
+    slug: "typst",
+    name: "Typst editor",
+    eyebrow: "Writing",
+    description:
+      "A browser-based Typst editor with live preview and PDF export — type Typst markup on the left, watch it compile to a document on the right, then download a PDF. The compiler runs entirely in your browser via WebAssembly; nothing is uploaded.",
+  },
 ];
 
 /** Just the paths, for prerender() and sitemap generation. */
