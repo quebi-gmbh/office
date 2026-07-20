@@ -22,6 +22,9 @@ import serifBold from "./fonts/LibertinusSerif-Bold.ttf?url";
 import serifItalic from "./fonts/LibertinusSerif-Italic.ttf?url";
 import serifBoldItalic from "./fonts/LibertinusSerif-BoldItalic.ttf?url";
 import monoRegular from "./fonts/DejaVuSansMono.ttf?url";
+// Typst's default math font ("New Computer Modern Math"). Without a font that
+// carries an OpenType MATH table, math renders as tofu (□) boxes.
+import mathBook from "./fonts/NewCMMath-Book.otf?url";
 
 const FONT_URLS = [
   serifRegular,
@@ -29,6 +32,7 @@ const FONT_URLS = [
   serifItalic,
   serifBoldItalic,
   monoRegular,
+  mathBook,
 ];
 
 let configured = false;
