@@ -8,7 +8,6 @@ import {
   Outlet,
   Scripts,
   ScrollRestoration,
-  useLocation,
   useRouteError,
 } from "react-router";
 import "./app.css";
@@ -86,15 +85,7 @@ export function ErrorBoundary() {
   );
 }
 
-/**
- * Routes whose editor is a wide side-by-side layout and should use the full
- * viewport width instead of the centered ~1100px reading column.
- */
-const FULL_WIDTH_ROUTES = new Set(["/typst"]);
-
 export default function App() {
-  const { pathname } = useLocation();
-  const fullWidth = FULL_WIDTH_ROUTES.has(pathname);
   return (
     <div id="root" className="flex min-h-full flex-col">
       <header className="flex items-center justify-between border-b border-border bg-card px-6 py-4">
@@ -132,18 +123,22 @@ export default function App() {
           >
             PDF
           </NavLink>
+          <NavLink
+            to="/typst"
+            className={({ isActive }) => (isActive ? "text-accent" : "")}
+          >
+            Typst
+          </NavLink>
         </nav>
       </header>
       <div className="flex min-h-0 flex-1">
         <ClientOnly>{() => <WorkspaceSidebar />}</ClientOnly>
         <main className="min-w-0 flex-1 overflow-auto">
-          <div
-            className={
-              fullWidth
-                ? "w-full px-6 py-8"
-                : "mx-auto w-full max-w-[1100px] px-6 py-8"
-            }
-          >
+          {/* Centered reading column by default; a route can opt into full
+              width by rendering an element with `data-full-bleed` (see the
+              Typst editor), which drops the max-width via :has(). CSS-only so
+              it works in the prerendered HTML without depending on JS. */}
+          <div className="mx-auto w-full max-w-[1100px] px-6 py-8 has-[[data-full-bleed]]:max-w-none">
             <Suspense
               fallback={
                 <div className="h-32 rounded-xl border border-border bg-card animate-pulse" />

@@ -84,7 +84,7 @@ export const ROUTES: RouteMeta[] = [
     name: "Typst editor",
     eyebrow: "Writing",
     description:
-      "A browser-based Typst editor with live preview and PDF export — type Typst markup on the left, watch it compile to a document on the right, then download a PDF. The compiler runs entirely in your browser via WebAssembly; nothing is uploaded.",
+      "A browser-based Typst editor with syntax highlighting, live preview, and export to PDF, SVG, or PNG — type Typst markup on the left, watch it compile on the right, zoom, and share by link. The compiler runs entirely in your browser via WebAssembly; nothing is uploaded.",
   },
 ];
 
