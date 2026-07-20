@@ -23,7 +23,13 @@ import {
 import { getProvider } from "./provider";
 import { supportsFileSystemAccess } from "./fs";
 import type { ToolId } from "./routing";
-import type { WorkspaceEntry, WsDirRef, WsFileRef, WsSource } from "./types";
+import type {
+  DriveFileRef,
+  WorkspaceEntry,
+  WsDirRef,
+  WsFileRef,
+  WsSource,
+} from "./types";
 
 export type WorkspaceStatus =
   | "idle" // no folder open
@@ -110,6 +116,18 @@ export function useWorkspace(): WorkspaceState {
 
 // ── Loading a workspace ────────────────────────────────────────────────────────
 
+// Files the user has explicitly added to a Drive workspace via the Picker (or
+// created in-app). Under the drive.file scope, a folder's pre-existing files
+// don't enumerate, so we track granted files here and merge them into the tree.
+const driveAdded = new Map<string, DriveFileRef>();
+
+function collectDriveIds(entries: WorkspaceEntry[], into: Set<string>): void {
+  for (const e of entries) {
+    if (e.kind === "file" && e.ref.source === "drive") into.add(e.ref.fileId);
+    else if (e.kind === "directory") collectDriveIds(e.children, into);
+  }
+}
+
 async function loadTree(rootRef: WsDirRef) {
   root = rootRef;
   set({
@@ -120,7 +138,18 @@ async function loadTree(rootRef: WsDirRef) {
   });
   try {
     const provider = await getProvider(rootRef.source);
-    const tree = await provider.listTree(rootRef);
+    let tree = await provider.listTree(rootRef);
+    if (rootRef.source === "drive" && driveAdded.size) {
+      const present = new Set<string>();
+      collectDriveIds(tree, present);
+      const extra: WorkspaceEntry[] = [];
+      for (const ref of driveAdded.values()) {
+        if (!present.has(ref.fileId)) {
+          extra.push({ kind: "file", name: ref.name, path: ref.path, ref });
+        }
+      }
+      tree = [...extra, ...tree];
+    }
     set({ status: "ready", tree });
   } catch (e) {
     set({ status: "error", error: e instanceof Error ? e.message : String(e) });
@@ -172,9 +201,28 @@ export async function refreshWorkspace(): Promise<void> {
   if (root) await loadTree(root);
 }
 
+/** Add existing Drive files to the workspace via the Picker (drive.file grant). */
+export async function addDriveFiles(): Promise<void> {
+  if (!root || root.source !== "drive") return;
+  const { pickFiles } = await import("./drive/picker");
+  const picked = await pickFiles(root.folderId);
+  for (const f of picked) {
+    driveAdded.set(f.id, {
+      source: "drive",
+      name: f.name,
+      path: f.name,
+      fileId: f.id,
+      mimeType: f.mimeType,
+      webUrl: f.url,
+    });
+  }
+  if (picked.length) await refreshWorkspace();
+}
+
 /** Close the workspace and forget it. */
 export async function closeWorkspace(): Promise<void> {
   root = null;
+  driveAdded.clear();
   await clearPersistedWorkspace().catch(() => {});
   set({
     status: "idle",
@@ -199,6 +247,7 @@ export async function createFileIn(
 ): Promise<WsFileRef> {
   const provider = await getProvider(parent.source);
   const ref = await provider.createFile(parent, name, content);
+  if (ref.source === "drive") driveAdded.set(ref.fileId, ref);
   await refreshWorkspace();
   return ref;
 }

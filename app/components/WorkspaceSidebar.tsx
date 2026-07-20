@@ -21,11 +21,13 @@ import {
   PanelLeft,
   PanelLeftClose,
   Pencil,
+  Plus,
   RefreshCw,
   Trash2,
   X,
 } from "lucide-react";
 import {
+  addDriveFiles,
   closeWorkspace,
   createDirIn,
   createFileIn,
@@ -47,12 +49,14 @@ import {
   type WsDirRef,
   type WsFileRef,
 } from "../lib/workspace";
+import { NewFileModal, type NewFileType } from "./NewFileModal";
 
 export function WorkspaceSidebar() {
   const ws = useWorkspace();
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
   const [canReopen, setCanReopen] = useState(false);
+  const [newFileParent, setNewFileParent] = useState<WsDirRef | null>(null);
 
   // Check once whether a workspace from a previous visit can be re-opened.
   useEffect(() => {
@@ -75,15 +79,25 @@ export function WorkspaceSidebar() {
 
   const rootRef = getRoot();
 
-  async function newFile(parent: WsDirRef) {
-    const name = prompt("New file name:");
-    if (!name) return;
-    await createFileIn(parent, name, "");
+  function newFile(parent: WsDirRef) {
+    setNewFileParent(parent);
   }
   async function newFolder(parent: WsDirRef) {
     const name = prompt("New folder name:");
     if (!name) return;
     await createDirIn(parent, name);
+  }
+
+  async function handleCreate(type: NewFileType, filename: string) {
+    const parent = newFileParent;
+    if (!parent) return;
+    const name = filename.includes(".") ? filename : `${filename}.${type.ext}`;
+    const content = await type.make();
+    const ref = await createFileIn(parent, name, content);
+    setNewFileParent(null);
+    setPendingOpen({ tool: type.tool, ref });
+    setActivePath(ref.path);
+    void navigate(TOOL_PATH[type.tool]);
   }
 
   if (collapsed) {
@@ -102,6 +116,10 @@ export function WorkspaceSidebar() {
   }
 
   return (
+    <>
+    {newFileParent && (
+      <NewFileModal onClose={() => setNewFileParent(null)} onCreate={handleCreate} />
+    )}
     <aside className="flex w-64 shrink-0 flex-col border-r border-border bg-card">
       {/* Header */}
       <div className="flex items-center justify-between gap-1 border-b border-border px-3 py-2">
@@ -130,6 +148,16 @@ export function WorkspaceSidebar() {
               >
                 <FolderPlus size={14} aria-hidden />
               </button>
+              {ws.source === "drive" && (
+                <button
+                  type="button"
+                  onClick={() => void addDriveFiles()}
+                  title="Add existing Drive files"
+                  className="rounded p-1 text-muted hover:bg-bg hover:text-fg"
+                >
+                  <Plus size={14} aria-hidden />
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => void refreshWorkspace()}
@@ -207,7 +235,11 @@ export function WorkspaceSidebar() {
             Couldn't read workspace: {ws.error}
           </p>
         ) : ws.tree.length === 0 ? (
-          <p className="p-2 text-xs text-muted">This folder is empty.</p>
+          <p className="p-2 text-xs leading-relaxed text-muted">
+            {ws.source === "drive"
+              ? "Nothing here yet. Use New file, or ＋ to add existing Drive files (Drive only shows files you create or add)."
+              : "This folder is empty."}
+          </p>
         ) : rootRef ? (
           <ul>
             {ws.tree.map((entry) => (
@@ -226,6 +258,7 @@ export function WorkspaceSidebar() {
         ) : null}
       </div>
     </aside>
+    </>
   );
 }
 
