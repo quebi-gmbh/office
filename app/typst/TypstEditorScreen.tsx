@@ -373,7 +373,7 @@ export function TypstEditorScreen() {
               </div>
             ) : svg ? (
               <div
-                className="mx-auto [&_svg]:h-auto [&_svg]:w-full [&_svg]:shadow-lg"
+                className="mx-auto [&_svg]:h-auto [&_svg]:w-full [&_svg]:bg-white [&_svg]:shadow-lg"
                 style={{ width: `${zoom * 100}%` }}
                 // Produced by our own local WASM compiler from the user's own
                 // input — no external/untrusted HTML.
