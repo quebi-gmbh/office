@@ -12,7 +12,13 @@
  * app/typst/fonts. That keeps the tool consistent with the rest of the site —
  * no third party sees the document.
  */
-import { $typst, initOptions, loadFonts } from "@myriaddreamin/typst.ts";
+import {
+  $typst,
+  FetchPackageRegistry,
+  initOptions,
+  loadFonts,
+  MemoryAccessModel,
+} from "@myriaddreamin/typst.ts";
 // Deep `?url` imports resolve via each package's "./wasm" export subpath.
 import compilerWasmUrl from "@myriaddreamin/typst-ts-web-compiler/wasm?url";
 import rendererWasmUrl from "@myriaddreamin/typst-ts-renderer/wasm?url";
@@ -44,12 +50,22 @@ let initPromise: Promise<typeof $typst> | null = null;
  */
 export function getTypst(): Promise<typeof $typst> {
   if (!configured) {
+    // In-browser package registry: lets documents `#import "@preview/…"`.
+    // Packages are fetched on demand from packages.typst.org (CORS-enabled)
+    // and cached in this in-memory access model for the session. This is the
+    // only feature that reaches the network at compile time, and only when a
+    // document actually imports a package.
+    const packageStore = new MemoryAccessModel();
     $typst.setCompilerInitOptions({
       getModule: () => compilerWasmUrl,
       beforeBuild: [
         // Self-host: don't pull the default font pack off jsdelivr.
         initOptions.disableDefaultFontAssets(),
         loadFonts(FONT_URLS),
+        initOptions.withAccessModel(packageStore),
+        initOptions.withPackageRegistry(
+          new FetchPackageRegistry(packageStore),
+        ),
       ],
     });
     $typst.setRendererInitOptions({ getModule: () => rendererWasmUrl });
