@@ -4,12 +4,15 @@ import { EditorView, keymap } from "@codemirror/view";
 import { oneDark } from "@codemirror/theme-one-dark";
 import {
   AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
   Download,
   Link2,
   Loader2,
   Maximize2,
   MoreHorizontal,
   RefreshCw,
+  StretchVertical,
   Type,
   ZoomIn,
   ZoomOut,
@@ -38,6 +41,7 @@ import {
   type Section,
 } from "./sync-map";
 import { setSyncLine, syncHighlight } from "./sync-highlight";
+import { countPages, splitSvgPages } from "./svg-pages";
 import {
   downloadBlob,
   hashToSource,
@@ -99,6 +103,8 @@ export function TypstEditorScreen() {
   const [syncEnabled, setSyncEnabled] = useState(true);
   const [previewMode, setPreviewMode] = useState<PreviewMode>("svg");
   const [band, setBand] = useState<Band | null>(null);
+  const [pageCount, setPageCount] = useState(1);
+  const [currentPage, setCurrentPage] = useState(1);
 
   const [wsFileName, setWsFileName] = useState<string | null>(null);
   const wsRef = useRef<WsFileRef | null>(null);
@@ -122,6 +128,11 @@ export function TypstEditorScreen() {
   useEffect(() => {
     sectionsRef.current = buildSections(source);
   }, [source]);
+
+  // Page count follows the compiled document.
+  useEffect(() => {
+    setPageCount(svg ? Math.max(1, countPages(svg)) : 1);
+  }, [svg]);
 
   // Run a scroll write without it bouncing back through the paired listener.
   const withSyncGuard = useCallback((fn: () => void) => {
@@ -585,6 +596,80 @@ export function TypstEditorScreen() {
     return () => container.removeEventListener("pointerup", onPointerUp);
   }, [previewMode, status.kind, revealSourceAtFraction]);
 
+  // Scroll the preview so page `n` (1-based) sits at the top.
+  const scrollToPage = useCallback((n: number) => {
+    const container = previewScrollRef.current;
+    if (!container) return;
+    const pages = container.querySelectorAll<HTMLElement>(".typst-page");
+    const pageEl = pages[Math.max(0, Math.min(pages.length - 1, n - 1))];
+    if (!pageEl) return;
+    const cRect = container.getBoundingClientRect();
+    const pRect = pageEl.getBoundingClientRect();
+    container.scrollTo({
+      top: Math.max(0, pRect.top - cRect.top + container.scrollTop - 8),
+      behavior: "smooth",
+    });
+  }, []);
+
+  // Track the current page from the scroll position.
+  useEffect(() => {
+    const container = previewScrollRef.current;
+    if (!container) return;
+    let raf = 0;
+    const update = () => {
+      raf = 0;
+      const pages = container.querySelectorAll<HTMLElement>(".typst-page");
+      if (pages.length === 0) return;
+      const mid = container.getBoundingClientRect().top + container.clientHeight / 2;
+      let cur = 1;
+      pages.forEach((p, i) => {
+        if (p.getBoundingClientRect().top <= mid) cur = i + 1;
+      });
+      setCurrentPage(cur);
+    };
+    const onScroll = () => {
+      if (!raf) raf = requestAnimationFrame(update);
+    };
+    container.addEventListener("scroll", onScroll, { passive: true });
+    update();
+    return () => {
+      container.removeEventListener("scroll", onScroll);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [previewMode, status.kind, svg]);
+
+  // Fit a whole page in the preview viewport (zoom = fraction of preview width).
+  const fitPage = useCallback(() => {
+    const container = previewScrollRef.current;
+    const pageEl = container?.querySelector<HTMLElement>(".typst-page");
+    if (!container || !pageEl) return;
+    const pw = parseFloat(pageEl.getAttribute("data-page-width") || "0");
+    const ph = parseFloat(pageEl.getAttribute("data-page-height") || "0");
+    if (pw <= 0 || ph <= 0) return;
+    const pad = 32; // p-4 → 1rem each side
+    const availW = container.clientWidth - pad;
+    const availH = container.clientHeight - pad;
+    if (availW <= 0 || availH <= 0) return;
+    // Page height at zoom z is z·availW·(ph/pw); solve for it to equal availH.
+    const z = (availH * pw) / (availW * ph);
+    setZoom(Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z)));
+  }, []);
+
+  // Download the current page as a standalone SVG.
+  const downloadCurrentPageSvg = useCallback(() => {
+    if (!svg) return;
+    const pages = splitSvgPages(svg);
+    const page = pages[Math.max(0, Math.min(pages.length - 1, currentPage - 1))];
+    if (!page) {
+      flashNotice("No page to export");
+      return;
+    }
+    downloadBlob(
+      new Blob([page.svg], { type: "image/svg+xml" }),
+      `document-page-${currentPage}.svg`,
+    );
+  }, [svg, currentPage, flashNotice]);
+
   const busy = status.kind === "loading" || status.kind === "compiling";
 
   return (
@@ -648,6 +733,11 @@ export function TypstEditorScreen() {
               <MenuItem onClick={downloadSvg} disabled={!svg}>
                 Download SVG
               </MenuItem>
+              {pageCount > 1 && (
+                <MenuItem onClick={downloadCurrentPageSvg} disabled={!svg}>
+                  Download page {currentPage} (SVG)
+                </MenuItem>
+              )}
               <MenuItem onClick={() => void downloadPng()} disabled={!svg}>
                 Download PNG
               </MenuItem>
@@ -716,6 +806,40 @@ export function TypstEditorScreen() {
             >
               <Maximize2 size={13} /> Fit width
             </button>
+            <button
+              type="button"
+              onClick={fitPage}
+              className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-xs text-muted transition hover:text-accent"
+            >
+              <StretchVertical size={13} /> Fit page
+            </button>
+
+            {/* Page navigation (multi-page docs). */}
+            {pageCount > 1 && (
+              <div className="ml-2 flex items-center gap-0.5 text-xs text-muted">
+                <button
+                  type="button"
+                  onClick={() => scrollToPage(currentPage - 1)}
+                  disabled={currentPage <= 1}
+                  className="rounded p-1 transition hover:text-accent disabled:opacity-40"
+                  aria-label="Previous page"
+                >
+                  <ChevronLeft size={15} />
+                </button>
+                <span className="tabular-nums">
+                  {currentPage} / {pageCount}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => scrollToPage(currentPage + 1)}
+                  disabled={currentPage >= pageCount}
+                  className="rounded p-1 transition hover:text-accent disabled:opacity-40"
+                  aria-label="Next page"
+                >
+                  <ChevronRight size={15} />
+                </button>
+              </div>
+            )}
 
             <div className="ml-auto flex items-center gap-1">
               <button
