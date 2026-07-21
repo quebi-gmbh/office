@@ -56,6 +56,7 @@ import type { DocTemplate } from "./templates/index";
 import type { JSONContent } from "@tiptap/react";
 import {
   usePendingFileOpen,
+  useUnsavedGuard,
   writeText,
   writeBlob,
   type OpenedFile,
@@ -270,6 +271,22 @@ function DocEditorCore({
   };
   const saveWsRef = useRef(saveToWorkspace);
   saveWsRef.current = saveToWorkspace;
+
+  useUnsavedGuard({
+    isDirty: () => dirty,
+    save: async () => {
+      const ok = await saveToWorkspace();
+      if (!ok && editor) {
+        downloadFile(
+          await exportMarkdown(editor),
+          filenameFromTitle(titleRef.current, "md"),
+          "text/markdown",
+        );
+      }
+      return true;
+    },
+    name: () => titleRef.current || "Untitled",
+  });
 
   // ── handleDocFileAction — used by the command palette ───────────────────────
   async function handleDocFileAction(action: string) {

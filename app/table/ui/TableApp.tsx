@@ -109,6 +109,7 @@ import {
 } from "~/table/io/import";
 import {
   usePendingFileOpen,
+  useUnsavedGuard,
   writeText,
   writeBlob,
   type WsFileRef,
@@ -212,6 +213,8 @@ export function TableApp() {
 
   // Workspace file handle (set when opened from the folder sidebar).
   const wsHandleRef = useRef<WsFileRef | null>(null);
+  // Dirty since the workspace file was opened/saved (for the unsaved guard).
+  const wsDirtyRef = useRef(false);
   const wsTargetRef = useRef<string | null>(null);
   const [wsFileName, setWsFileName] = useState<string | null>(null);
   const workbookRef = useRef(workbook);
@@ -252,6 +255,7 @@ export function TableApp() {
     (wb: Workbook, opts: { history?: boolean } = {}) => {
       if (wb === workbook) return;
       setWorkbook(wb);
+      wsDirtyRef.current = true;
       if (opts.history !== false) {
         history.current.push(wb);
         // Auto-snapshot every 25 committed edits.
@@ -806,6 +810,7 @@ export function TableApp() {
       setSortSpec([]);
       setWsFileName(name);
       setLoaded(true);
+      wsDirtyRef.current = false;
       showToast(`Opened ${name}`);
     } catch {
       showToast("Could not open that file.", "error");
@@ -839,6 +844,7 @@ export function TableApp() {
       } else if (target.toText) {
         await writeText(ref, target.toText(ctx));
       }
+      wsDirtyRef.current = false;
       showToast(`Saved ${wsFileName ?? ""}`.trim());
     } catch (e) {
       showToast(`Save failed: ${(e as Error).message}`, "error");
@@ -847,6 +853,15 @@ export function TableApp() {
   }, [doc, colTypes, locale, settings.exportFormulasAsText, engine, workbook.active, wsFileName, showToast]);
   const saveWsRef = useRef(saveToWorkspaceFile);
   saveWsRef.current = saveToWorkspaceFile;
+
+  useUnsavedGuard({
+    isDirty: () => !!wsFileName && wsDirtyRef.current,
+    save: async () => {
+      await saveToWorkspaceFile();
+      return true;
+    },
+    name: () => wsFileName ?? "Untitled",
+  });
 
   // ── Paste: bootstrap when empty, else paste a block into the selection ─────
   const onPaste = useCallback(

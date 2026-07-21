@@ -3,8 +3,16 @@
  * workspace and opened directly in the matching tool.
  */
 import { useRef, useState } from "react";
-import { Code2, FileText, FileType, Image as ImageIcon, Table, X } from "lucide-react";
+import { Code2, FileText, FileType, Image as ImageIcon, Table } from "lucide-react";
 import type { ToolId } from "../lib/workspace";
+import { Button } from "./ui/Button";
+import {
+  Dialog,
+  DialogBody,
+  DialogClose,
+  DialogFooter,
+  DialogHeader,
+} from "./ui/Dialog";
 
 export interface NewFileType {
   id: string;
@@ -73,26 +81,9 @@ export function NewFileModal({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-sm rounded-xl border border-border bg-bg p-4 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold">New file</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded p-1 text-muted hover:bg-bg hover:text-fg"
-            aria-label="Close"
-          >
-            <X size={16} aria-hidden />
-          </button>
-        </div>
-
+    <Dialog open onClose={onClose}>
+      <DialogHeader title="New file" />
+      <DialogBody>
         <div className="mb-3 grid grid-cols-2 gap-2">
           {NEW_FILE_TYPES.map((t) => {
             const Icon = t.icon;
@@ -126,27 +117,19 @@ export function NewFileModal({
             if (e.key === "Enter") void submit();
           }}
           autoFocus
-          className="mb-4 w-full rounded-md border border-border bg-bg px-3 py-2 text-sm outline-none focus:border-accent"
+          className="w-full rounded-md border border-border bg-bg px-3 py-2 text-sm outline-none focus:border-accent"
         />
-
-        <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md px-3 py-1.5 text-sm text-muted hover:text-fg"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={() => void submit()}
-            disabled={!filename.trim() || busy}
-            className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
-          >
-            {busy ? "Creating…" : "Create & open"}
-          </button>
-        </div>
-      </div>
-    </div>
+      </DialogBody>
+      <DialogFooter>
+        <DialogClose>Cancel</DialogClose>
+        <Button
+          intent="primary"
+          onClick={() => void submit()}
+          disabled={!filename.trim() || busy}
+        >
+          {busy ? "Creating…" : "Create & open"}
+        </Button>
+      </DialogFooter>
+    </Dialog>
   );
 }

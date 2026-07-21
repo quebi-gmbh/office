@@ -37,7 +37,12 @@ import { langById, langFromFilename, noLanguage } from "~/lib/code-editor/langua
 import type { Lang } from "~/lib/code-editor/languages";
 import { LANG_STORAGE_KEY } from "~/lib/code-editor/lang-storage";
 import { takeCodeHandoff } from "~/lib/code-handoff";
-import { usePendingFileOpen, writeText, type WsFileRef } from "~/lib/workspace";
+import {
+  usePendingFileOpen,
+  useUnsavedGuard,
+  writeText,
+  type WsFileRef,
+} from "~/lib/workspace";
 
 const DRAFT_KEY = "office:code:draft";
 
@@ -236,6 +241,15 @@ function CodeEditor() {
     },
     [value, settings, activeLang, fileState, openDocument, showToast],
   );
+
+  useUnsavedGuard({
+    isDirty: () => fileState.dirty,
+    save: async () => {
+      await handleFileAction("save");
+      return true;
+    },
+    name: () => fileState.name ?? "Untitled",
+  });
 
   // ── Format handler ────────────────────────────────────────────────────────
   const handleFormat = useCallback(async () => {
