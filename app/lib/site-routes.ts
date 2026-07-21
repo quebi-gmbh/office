@@ -87,6 +87,14 @@ export const ROUTES: RouteMeta[] = [
       "Client-side PDF tools — merge, split, crop, rotate, watermark, fill forms, edit metadata, and extract text or images. Your files never leave the browser.",
   },
   {
+    path: "/cad",
+    slug: "cad",
+    name: "CAD tool",
+    eyebrow: "3D modelling",
+    description:
+      "A browser-based parametric CAD tool — sketch on base planes with constraints and typed dimensions, then extrude, revolve, or combine primitives with booleans into solids. A live feature tree, undo/redo, autosave, share-by-URL, and STL/GLB/PNG export. The geometry kernel (Manifold) runs in a Web Worker via WebAssembly; nothing is uploaded.",
+  },
+  {
     path: "/typst",
     slug: "typst",
     name: "Typst editor",
