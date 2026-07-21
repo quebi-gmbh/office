@@ -6,10 +6,11 @@ const TOOL_KEYS: Record<string, ToolId> = {
   v: "select",
   r: "rect",
   o: "ellipse",
-  e: "ellipse",
   l: "line",
   p: "pen",
   b: "pencil",
+  g: "polygon",
+  s: "star",
   t: "text",
 };
 
@@ -67,6 +68,11 @@ export function useShortcuts(
           case "d":
             e.preventDefault();
             engine.duplicateSelection();
+            return;
+          case "g":
+            e.preventDefault();
+            if (e.shiftKey) engine.ungroup();
+            else engine.group();
             return;
           case "s":
             e.preventDefault();

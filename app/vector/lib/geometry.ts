@@ -28,6 +28,7 @@ export function localBBox(node: VNode): Rect {
   switch (node.type) {
     case "rect":
     case "ellipse":
+    case "image":
       return { x: node.x, y: node.y, w: node.w, h: node.h };
     case "line": {
       const minX = Math.min(node.x1, node.x2);
@@ -55,11 +56,17 @@ export function localBBox(node: VNode): Rect {
       return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
     }
     case "text": {
-      // Approximate: width ≈ 0.6em per char, height ≈ 1.2em. `y` is the
-      // text baseline; the visual box starts ~0.8em above it.
-      const w = Math.max(node.text.length, 1) * node.fontSize * 0.6;
-      const h = node.fontSize * 1.2;
-      return { x: node.x, y: node.y - node.fontSize * 0.8, w, h };
+      // Approximate: width ≈ 0.6em per widest line, height ≈ lineHeight×lines.
+      // `y` is the first baseline; the visual box starts ~0.8em above it.
+      const lines = node.text.split("\n");
+      const cols = lines.reduce((m, l) => Math.max(m, l.length), 1);
+      const lh = (node.lineHeight ?? 1.2) * node.fontSize;
+      const w = cols * node.fontSize * 0.6;
+      const h = Math.max(1, lines.length) * lh;
+      let x = node.x;
+      if (node.align === "center") x = node.x - w / 2;
+      else if (node.align === "right") x = node.x - w;
+      return { x, y: node.y - node.fontSize * 0.8, w, h };
     }
   }
 }
@@ -174,6 +181,7 @@ export function hitTest(node: VNode, worldPoint: Point, tol: number): boolean {
   switch (node.type) {
     case "rect":
     case "text":
+    case "image":
     case "ellipse": {
       const b = localBBox(node);
       if (node.type === "ellipse") {
@@ -230,6 +238,7 @@ export function moveNode<T extends VNode>(node: T, dx: number, dy: number): T {
     case "rect":
     case "ellipse":
     case "text":
+    case "image":
       return { ...node, x: node.x + dx, y: node.y + dy };
     case "line":
       return { ...node, x1: node.x1 + dx, y1: node.y1 + dy, x2: node.x2 + dx, y2: node.y2 + dy };
@@ -267,6 +276,12 @@ export function scaleNode<T extends VNode>(
         out.rx = Math.min(out.rx, out.w / 2, out.h / 2);
       }
       return out;
+    }
+    case "image": {
+      const [nx, ny] = sc(node.x, node.y);
+      const w = node.w * sx;
+      const h = node.h * sy;
+      return { ...node, x: w < 0 ? nx + w : nx, y: h < 0 ? ny + h : ny, w: Math.abs(w), h: Math.abs(h) };
     }
     case "text": {
       const [nx, ny] = sc(node.x, node.y);
