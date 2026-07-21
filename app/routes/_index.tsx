@@ -5,6 +5,7 @@ import {
   FileType,
   Paintbrush,
   PenLine,
+  PenTool,
   Table2,
 } from "lucide-react";
 import { Link } from "react-router";
@@ -43,6 +44,13 @@ const tools: Tool[] = [
     blurb: "A simple Paint-like drawing canvas.",
     status: "live",
     icon: <Paintbrush size={20} aria-hidden />,
+  },
+  {
+    to: "/vector",
+    name: "Vector editor",
+    blurb: "Draw shapes, freehand and pen paths, and text; select, transform, and restyle; snap to a grid, undo/redo, autosave, and export to SVG or PNG.",
+    status: "live",
+    icon: <PenTool size={20} aria-hidden />,
   },
   {
     to: "/table",

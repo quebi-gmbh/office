@@ -115,6 +115,12 @@ export default function App() {
             Paint
           </NavLink>
           <NavLink
+            to="/vector"
+            className={({ isActive }) => (isActive ? "text-accent" : "")}
+          >
+            Vector
+          </NavLink>
+          <NavLink
             to="/table"
             className={({ isActive }) => (isActive ? "text-accent" : "")}
           >
