@@ -63,6 +63,14 @@ export const ROUTES: RouteMeta[] = [
       "A simple browser-based paint and drawing canvas — brushes, shapes, text, zoom, and paste-from-clipboard. Missing MS Paint? Crop a screenshot or scribble a note without installing anything.",
   },
   {
+    path: "/vector",
+    slug: "vector",
+    name: "Vector editor",
+    eyebrow: "Graphics",
+    description:
+      "A browser-based vector graphics editor — draw rectangles, ellipses, lines, freehand and pen paths, and text; select, move, resize, rotate, and restyle with fills, strokes, and opacity; snap to a grid, undo/redo, autosave, and export to SVG or PNG. Everything runs client-side; nothing is uploaded.",
+  },
+  {
     path: "/table",
     slug: "table",
     name: "Table",
