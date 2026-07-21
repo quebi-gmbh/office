@@ -55,7 +55,7 @@ export function Dialog({
         <div
           role="dialog"
           aria-modal="true"
-          className={`w-full max-w-sm rounded-xl border border-border bg-card p-4 shadow-xl ${className}`}
+          className={`w-full max-w-sm rounded-xl border border-border bg-surface p-4 shadow-xl ${className}`}
           onMouseDown={(e) => e.stopPropagation()}
         >
           {children}
