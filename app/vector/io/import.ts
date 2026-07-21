@@ -11,7 +11,7 @@
 import { newId } from "~/vector/lib/id";
 import type { Point, Style, VNode, VectorScene } from "~/vector/lib/types";
 
-const SUPPORTED = "rect,circle,ellipse,line,polyline,polygon,path,text";
+const SUPPORTED = "rect,circle,ellipse,line,polyline,polygon,path,text,image";
 
 interface Decomposed {
   tx: number;
@@ -165,6 +165,26 @@ function elementToNode(el: Element, ctm: DOMMatrix): VNode | null {
         type: "polyline",
         points: pts,
         closed: closed && style.fill != null,
+      };
+    }
+    case "image": {
+      const x = num(el, "x");
+      const y = num(el, "y");
+      const w = num(el, "width");
+      const h = num(el, "height");
+      const href = el.getAttribute("href") ?? el.getAttributeNS("http://www.w3.org/1999/xlink", "href");
+      if (!href) return null;
+      const center = mapPoint(ctm, x + w / 2, y + h / 2);
+      const nw = w * d.sx;
+      const nh = h * d.sy;
+      return {
+        ...base,
+        type: "image",
+        x: center[0] - nw / 2,
+        y: center[1] - nh / 2,
+        w: nw,
+        h: nh,
+        href,
       };
     }
     case "text": {

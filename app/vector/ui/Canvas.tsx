@@ -7,7 +7,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { PointerEvent as RPointerEvent } from "react";
-import type { VectorEngine } from "~/vector/lib/engine";
+import { expandGroups, type VectorEngine } from "~/vector/lib/engine";
 import type { ViewportApi } from "~/vector/hooks/useViewport";
 import {
   hitTest,
@@ -18,11 +18,20 @@ import {
   scaleNode,
   snap,
   snapPoint,
+  worldBounds,
   worldCorners,
 } from "~/vector/lib/geometry";
-import { nodeToSvgEl } from "~/vector/lib/render";
+import { nodeToSvgEl, sceneDefsSvg } from "~/vector/lib/render";
+import { makeParametricShape, isParametricTool } from "~/vector/lib/shapes";
+import { imageNodeFromFile } from "~/vector/io/image";
 import { newId } from "~/vector/lib/id";
 import type { Point, VNode, VectorState } from "~/vector/lib/types";
+
+/** A snap target line (document-space position on one axis). */
+interface SnapLine {
+  axis: "x" | "y";
+  pos: number;
+}
 
 type HandleId = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
 
@@ -42,6 +51,7 @@ type Gesture =
   | { kind: "move"; start: Point; snapshot: Map<string, VNode> }
   | { kind: "resize"; handle: HandleId; frame: Frame; snapshot: Map<string, VNode> }
   | { kind: "rotate"; pivot: Point; startAngle: number; snapshot: Map<string, VNode> }
+  | { kind: "guide"; id: string; axis: "x" | "y" }
   | { kind: "pan"; start: Point; origin: { x: number; y: number } };
 
 interface Props {
@@ -114,6 +124,7 @@ export function Canvas({ engine, state, viewport, containerRef }: Props) {
   const [pen, setPen] = useState<{ points: Point[]; cursor: Point } | null>(null);
   const [edit, setEdit] = useState<{ id: string; value: string } | null>(null);
   const [spaceDown, setSpaceDown] = useState(false);
+  const [snapLines, setSnapLines] = useState<SnapLine[]>([]);
 
   const { view, doc, grid } = state;
   const toScreen = (p: Point): Point => [p[0] * view.zoom + view.panX, p[1] * view.zoom + view.panY];
@@ -180,29 +191,32 @@ export function Canvas({ engine, state, viewport, containerRef }: Props) {
         return;
       default:
         gestureRef.current = { kind: "create", start: gridSnap(world) };
-        setDraft(makeShape(state, gridSnap(world), gridSnap(world)));
+        setDraft(buildDraft(state, gridSnap(world), gridSnap(world)));
         return;
     }
   }
 
   function beginSelect(e: RPointerEvent, world: Point) {
     const tol = 6 / view.zoom;
-    // Top-most hit.
+    // Top-most hit (skipping hidden + locked objects).
     let hit: VNode | null = null;
     for (let i = state.nodes.length - 1; i >= 0; i--) {
-      if (hitTest(state.nodes[i], world, tol)) {
-        hit = state.nodes[i];
+      const n = state.nodes[i];
+      if (n.hidden || n.locked) continue;
+      if (hitTest(n, world, tol)) {
+        hit = n;
         break;
       }
     }
     if (hit) {
+      const groupIds = expandGroups(state.nodes, [hit.id]);
       const already = state.selection.includes(hit.id);
       if (e.shiftKey) {
-        engine.toggleInSelection(hit.id);
+        groupIds.forEach((id) => engine.toggleInSelection(id));
         return;
       }
-      if (!already) engine.select([hit.id]);
-      const ids = already ? state.selection : [hit.id];
+      if (!already) engine.select(groupIds);
+      const ids = already ? state.selection : groupIds;
       const snapshot = new Map(state.nodes.filter((n) => ids.includes(n.id)).map((n) => [n.id, n]));
       gestureRef.current = { kind: "move", start: world, snapshot };
     } else {
@@ -220,6 +234,12 @@ export function Canvas({ engine, state, viewport, containerRef }: Props) {
     if (!frame) return;
     const snapshot = new Map(nodes.map((n) => [n.id, n]));
     gestureRef.current = { kind: "resize", handle, frame, snapshot };
+  }
+
+  function beginGuideDrag(e: RPointerEvent, id: string, axis: "x" | "y") {
+    e.stopPropagation();
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+    gestureRef.current = { kind: "guide", id, axis };
   }
 
   function beginRotate(e: RPointerEvent) {
@@ -251,7 +271,7 @@ export function Canvas({ engine, state, viewport, containerRef }: Props) {
         return;
       }
       case "create": {
-        setDraft(makeShape(state, g.start, gridSnap(world), e.shiftKey));
+        setDraft(buildDraft(state, g.start, gridSnap(world), e.shiftKey));
         return;
       }
       case "pencil": {
@@ -288,6 +308,12 @@ export function Canvas({ engine, state, viewport, containerRef }: Props) {
           const b = localBBox(first);
           dx = snap(b.x + rawDx, grid.size) - b.x;
           dy = snap(b.y + rawDy, grid.size) - b.y;
+          setSnapLines([]);
+        } else if (grid.snapObjects) {
+          const snapped = computeObjectSnap(g.snapshot, rawDx, rawDy, state, (grid.tolerance || 8) / view.zoom);
+          dx = snapped.dx;
+          dy = snapped.dy;
+          setSnapLines(snapped.lines);
         }
         const out = new Map<string, VNode>();
         g.snapshot.forEach((n, id) => out.set(id, moveNode(n, dx, dy)));
@@ -296,6 +322,10 @@ export function Canvas({ engine, state, viewport, containerRef }: Props) {
       }
       case "resize": {
         applyResize(g, world, e.shiftKey);
+        return;
+      }
+      case "guide": {
+        engine.updateGuide(g.id, g.axis === "x" ? gridSnap(world)[0] : gridSnap(world)[1]);
         return;
       }
       case "rotate": {
@@ -365,6 +395,7 @@ export function Canvas({ engine, state, viewport, containerRef }: Props) {
   function onPointerUp(e: RPointerEvent<SVGSVGElement>) {
     const g = gestureRef.current;
     gestureRef.current = { kind: "none" };
+    if (snapLines.length) setSnapLines([]);
 
     switch (g.kind) {
       case "create": {
@@ -391,7 +422,9 @@ export function Canvas({ engine, state, viewport, containerRef }: Props) {
       }
       case "marquee": {
         if (marquee) {
-          const inside = state.nodes.filter((n) => nodeInMarquee(n, marquee)).map((n) => n.id);
+          const inside = state.nodes
+            .filter((n) => !n.hidden && !n.locked && nodeInMarquee(n, marquee))
+            .map((n) => n.id);
           engine.select(e.shiftKey ? [...new Set([...state.selection, ...inside])] : inside);
         }
         setMarquee(null);
@@ -402,22 +435,34 @@ export function Canvas({ engine, state, viewport, containerRef }: Props) {
       case "rotate":
         engine.commit();
         return;
+      case "guide": {
+        const world = viewport.screenToDoc(e.clientX, e.clientY);
+        const off = g.axis === "x" ? world[0] < 0 || world[0] > doc.width : world[1] < 0 || world[1] > doc.height;
+        if (off) engine.removeGuide(g.id);
+        else engine.commit();
+        return;
+      }
     }
   }
 
   function finishCreate(start: Point, end: Point, uniform: boolean) {
     const dist = Math.hypot(end[0] - start[0], end[1] - start[1]);
-    if (dist < 3 && (state.tool === "rect" || state.tool === "rounded-rect" || state.tool === "ellipse")) {
+    const boxTool =
+      state.tool === "rect" ||
+      state.tool === "rounded-rect" ||
+      state.tool === "ellipse" ||
+      isParametricTool(state.tool);
+    if (dist < 3 && boxTool) {
       // Click without drag → default-sized shape centred on the point.
       const w = 120;
       const h = 90;
       const s: Point = [start[0] - w / 2, start[1] - h / 2];
-      engine.addNode(makeShape(state, s, [s[0] + w, s[1] + h]));
+      engine.addNode({ ...buildDraft(state, s, [s[0] + w, s[1] + h]), id: newId() } as VNode);
       engine.setTool("select");
       return;
     }
     if (dist < 3) return;
-    engine.addNode(makeShape(state, start, end, uniform));
+    engine.addNode({ ...buildDraft(state, start, end, uniform), id: newId() } as VNode);
     engine.setTool("select");
   }
 
@@ -523,6 +568,36 @@ export function Canvas({ engine, state, viewport, containerRef }: Props) {
     return () => el.removeEventListener("wheel", onWheel);
   }, [engine, viewport]);
 
+  // ─── Paste a raster image from the clipboard ────────────────────────────────
+  useEffect(() => {
+    const onPaste = async (e: ClipboardEvent) => {
+      if (isEditable(e.target)) return;
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const it of Array.from(items)) {
+        if (it.type.startsWith("image/")) {
+          const file = it.getAsFile();
+          if (!file) continue;
+          e.preventDefault();
+          const r = containerRef.current?.getBoundingClientRect();
+          const at = viewport.screenToDoc((r?.left ?? 0) + (r?.width ?? 0) / 2, (r?.top ?? 0) + (r?.height ?? 0) / 2);
+          engine.addNode(await imageNodeFromFile(file, { at }));
+          return;
+        }
+      }
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, [engine, viewport, containerRef]);
+
+  async function onDrop(e: React.DragEvent) {
+    const file = Array.from(e.dataTransfer.files).find((f) => f.type.startsWith("image/"));
+    if (!file) return;
+    e.preventDefault();
+    const at = viewport.screenToDoc(e.clientX, e.clientY);
+    engine.addNode(await imageNodeFromFile(file, { at }));
+  }
+
   // ─── Render ─────────────────────────────────────────────────────────────────
   const selNodes = selectedNodes();
   const frame = selectionFrame(selNodes);
@@ -537,7 +612,12 @@ export function Canvas({ engine, state, viewport, containerRef }: Props) {
   const editNode = edit ? state.nodes.find((n) => n.id === edit.id) : null;
 
   return (
-    <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-[#0b1120]">
+    <div
+      ref={containerRef}
+      className="relative h-full w-full overflow-hidden bg-[#0b1120]"
+      onDrop={onDrop}
+      onDragOver={(e) => e.preventDefault()}
+    >
       <svg
         ref={svgRef}
         className="absolute inset-0 h-full w-full touch-none select-none"
@@ -550,6 +630,9 @@ export function Canvas({ engine, state, viewport, containerRef }: Props) {
         }}
         onDoubleClick={onDoubleClick}
       >
+        {/* Gradient + marker defs shared by canvas and export. */}
+        <defs dangerouslySetInnerHTML={{ __html: sceneDefsSvg(draft ? [...state.nodes, draft] : state.nodes) }} />
+
         {/* Artboard + grid, drawn in document space. */}
         <g transform={`translate(${view.panX} ${view.panY}) scale(${view.zoom})`}>
           <rect
@@ -569,6 +652,42 @@ export function Canvas({ engine, state, viewport, containerRef }: Props) {
             {draft && <NodeShape node={draft} />}
             {pen && <PenPreview points={pen.points} cursor={pen.cursor} state={state} />}
           </g>
+          {/* Draggable guides. */}
+          {(doc.guides ?? []).map((gd) =>
+            gd.axis === "x" ? (
+              <line
+                key={gd.id}
+                x1={gd.pos}
+                y1={0}
+                x2={gd.pos}
+                y2={doc.height}
+                stroke="#22d3ee"
+                strokeWidth={1 / view.zoom}
+                style={{ cursor: "ew-resize" }}
+                onPointerDown={(e) => beginGuideDrag(e, gd.id, "x")}
+              />
+            ) : (
+              <line
+                key={gd.id}
+                x1={0}
+                y1={gd.pos}
+                x2={doc.width}
+                y2={gd.pos}
+                stroke="#22d3ee"
+                strokeWidth={1 / view.zoom}
+                style={{ cursor: "ns-resize" }}
+                onPointerDown={(e) => beginGuideDrag(e, gd.id, "y")}
+              />
+            ),
+          )}
+          {/* Smart-guide snap lines. */}
+          {snapLines.map((l, i) =>
+            l.axis === "x" ? (
+              <line key={i} x1={l.pos} y1={0} x2={l.pos} y2={doc.height} stroke="#f472b6" strokeWidth={1 / view.zoom} style={{ pointerEvents: "none" }} />
+            ) : (
+              <line key={i} x1={0} y1={l.pos} x2={doc.width} y2={l.pos} stroke="#f472b6" strokeWidth={1 / view.zoom} style={{ pointerEvents: "none" }} />
+            ),
+          )}
         </g>
 
         {/* Overlay: selection box + handles, in screen space. */}
@@ -627,11 +746,25 @@ export function Canvas({ engine, state, viewport, containerRef }: Props) {
 // ─── Presentational sub-components ────────────────────────────────────────────
 
 function NodeShape({ node, hidden }: { node: VNode; hidden?: boolean }) {
-  if (hidden) return null;
+  if (hidden || node.hidden) return null;
   const el = nodeToSvgEl(node);
   const attrs = el.attrs as Record<string, string | number>;
-  if (el.tag === "text") {
-    return <text {...attrs}>{el.text}</text>;
+  if (el.tag === "text" && node.type === "text") {
+    const lines = el.lines ?? [node.text];
+    const lh = (node.lineHeight ?? 1.2) * node.fontSize;
+    if (lines.length <= 1) return <text {...attrs}>{node.text}</text>;
+    return (
+      <text {...attrs}>
+        {lines.map((ln, i) => (
+          <tspan key={i} x={attrs.x} dy={i === 0 ? 0 : lh}>
+            {ln}
+          </tspan>
+        ))}
+      </text>
+    );
+  }
+  if (el.tag === "image") {
+    return <image {...attrs} />;
   }
   const Tag = el.tag as "rect";
   return <Tag {...attrs} />;
@@ -734,6 +867,58 @@ function isEditable(t: EventTarget | null): boolean {
   if (!el) return false;
   const tag = el.tagName;
   return tag === "INPUT" || tag === "TEXTAREA" || (el as HTMLElement).isContentEditable === true;
+}
+
+/** Snap a moving selection to other objects' edges/centres, guides & artboard. */
+function computeObjectSnap(
+  snapshot: Map<string, VNode>,
+  rawDx: number,
+  rawDy: number,
+  state: VectorState,
+  tol: number,
+): { dx: number; dy: number; lines: SnapLine[] } {
+  const movingIds = new Set(snapshot.keys());
+  // Union world bounds of the moving set at the raw offset.
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  snapshot.forEach((n) => {
+    const b = worldBounds(moveNode(n, rawDx, rawDy));
+    minX = Math.min(minX, b.minX); minY = Math.min(minY, b.minY);
+    maxX = Math.max(maxX, b.maxX); maxY = Math.max(maxY, b.maxY);
+  });
+  const candX = [0, state.doc.width];
+  const candY = [0, state.doc.height];
+  for (const n of state.nodes) {
+    if (movingIds.has(n.id) || n.hidden) continue;
+    const b = worldBounds(n);
+    candX.push(b.minX, (b.minX + b.maxX) / 2, b.maxX);
+    candY.push(b.minY, (b.minY + b.maxY) / 2, b.maxY);
+  }
+  for (const g of state.doc.guides ?? []) (g.axis === "x" ? candX : candY).push(g.pos);
+
+  const snapAxis = (vals: number[], cands: number[]): { adj: number; pos: number | null } => {
+    let bestDist = tol;
+    let adj = 0;
+    let pos: number | null = null;
+    for (const v of vals) for (const c of cands) {
+      const d = Math.abs(v - c);
+      if (d < bestDist) { bestDist = d; adj = c - v; pos = c; }
+    }
+    return { adj, pos };
+  };
+  const xr = snapAxis([minX, (minX + maxX) / 2, maxX], candX);
+  const yr = snapAxis([minY, (minY + maxY) / 2, maxY], candY);
+  const lines: SnapLine[] = [];
+  if (xr.pos !== null) lines.push({ axis: "x", pos: xr.pos });
+  if (yr.pos !== null) lines.push({ axis: "y", pos: yr.pos });
+  return { dx: rawDx + xr.adj, dy: rawDy + yr.adj, lines };
+}
+
+/** Draft node for the active creation tool (parametric or box-drag). */
+function buildDraft(state: VectorState, start: Point, end: Point, uniform = false): VNode {
+  if (isParametricTool(state.tool)) {
+    return makeParametricShape(state.tool, start, end, state.defaults, state.shapeDefaults, "draft");
+  }
+  return makeShape(state, start, end, uniform);
 }
 
 /** Build a shape node from a drag rectangle for the active creation tool. */

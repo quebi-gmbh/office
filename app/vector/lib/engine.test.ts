@@ -130,6 +130,63 @@ describe("engine styling", () => {
   });
 });
 
+describe("engine grouping & arrange", () => {
+  function seed() {
+    const e = createEngine();
+    e.addNode({ ...makeRect("a"), x: 0, y: 0, w: 10, h: 10 });
+    e.addNode({ ...makeRect("b"), x: 100, y: 50, w: 20, h: 20 });
+    e.addNode({ ...makeRect("c"), x: 200, y: 200, w: 30, h: 10 });
+    return e;
+  }
+
+  test("group tags selection with a shared id; ungroup clears it", () => {
+    const e = seed();
+    e.select(["a", "b"]);
+    e.group();
+    const g = e.store.getSnapshot().nodes.find((n) => n.id === "a")!.groupId;
+    expect(g).toBeTruthy();
+    expect(e.store.getSnapshot().nodes.find((n) => n.id === "b")!.groupId).toBe(g!);
+    e.select(["a"]);
+    e.ungroup();
+    expect(e.store.getSnapshot().nodes.find((n) => n.id === "b")!.groupId).toBeFalsy();
+  });
+
+  test("align left moves every selected node to the group's left edge", () => {
+    const e = seed();
+    e.select(["a", "b", "c"]);
+    e.align("left");
+    const xs = e.store.getSnapshot().nodes.map((n) => (n as RectNode).x);
+    expect(Math.min(...xs)).toBe(0);
+    expect(xs.every((x) => x === 0)).toBe(true);
+  });
+
+  test("lock removes node from selection and flags it", () => {
+    const e = seed();
+    e.select(["a"]);
+    e.setLocked(["a"], true);
+    const s = e.store.getSnapshot();
+    expect(s.nodes.find((n) => n.id === "a")!.locked).toBe(true);
+    expect(s.selection).toEqual([]);
+  });
+
+  test("reorder moves a node to a new z-index", () => {
+    const e = seed();
+    e.reorder("a", 2);
+    expect(e.store.getSnapshot().nodes.map((n) => n.id)).toEqual(["b", "c", "a"]);
+  });
+
+  test("booleanOp union of two rects yields a closed polyline", () => {
+    const e = createEngine();
+    e.addNode({ ...makeRect("a"), x: 0, y: 0, w: 20, h: 20 });
+    e.addNode({ ...makeRect("b"), x: 10, y: 10, w: 20, h: 20 });
+    e.select(["a", "b"]);
+    e.booleanOp("union");
+    const s = e.store.getSnapshot();
+    expect(s.nodes.some((n) => n.type === "rect")).toBe(false);
+    expect(s.nodes.some((n) => n.type === "polyline")).toBe(true);
+  });
+});
+
 describe("engine document", () => {
   test("newDocument resets nodes and history", () => {
     const e = createEngine();
