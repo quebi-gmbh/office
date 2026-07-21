@@ -1,64 +1,109 @@
 /**
- * Tracks the currently-focused editor's unsaved state so the app can warn
- * before navigating away. Each tool registers a guard via `useUnsavedGuard`;
- * the `NavigationGuard` (mounted in the root layout) reads the active one.
+ * Reactive registry of the currently-focused editor's unsaved state + save
+ * action. Each tool registers via `useUnsavedGuard({ dirty, name, save })`; the
+ * header Save button (`SaveButton`) and the `NavigationGuard` both read the
+ * active registration through `useGuardState()`.
+ *
+ * "dirty" means changed since the last save/open — NOT the tool's internal
+ * draft-autosave flag — so navigating away reliably prompts.
  *
  * Only one editor is active at a time (routes are mutually exclusive), so a
- * single-slot registry is enough.
+ * single slot with an owner token is enough.
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 
-export interface DirtyGuard {
-  /** True when there are unsaved changes worth warning about. */
-  isDirty: () => boolean;
-  /** Persist the document. Resolve true if handled (saved or downloaded). */
+export interface GuardState {
+  active: boolean;
+  dirty: boolean;
+  name: string;
   save: () => Promise<boolean>;
-  /** Human-friendly document name for the prompt. */
-  name: () => string;
+  owner: number;
 }
 
-let current: DirtyGuard | null = null;
+const IDLE: GuardState = {
+  active: false,
+  dirty: false,
+  name: "",
+  save: async () => true,
+  owner: 0,
+};
+
+let state: GuardState = IDLE;
+const listeners = new Set<() => void>();
+
+function emit() {
+  for (const l of listeners) l();
+}
+function subscribe(cb: () => void) {
+  listeners.add(cb);
+  return () => listeners.delete(cb);
+}
+function getSnapshot() {
+  return state;
+}
+function getServerSnapshot() {
+  return IDLE;
+}
+
+export function useGuardState(): GuardState {
+  return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+}
 
 export function isCurrentlyDirty(): boolean {
-  try {
-    return current?.isDirty() ?? false;
-  } catch {
-    return false;
-  }
+  return state.active && state.dirty;
 }
-
 export async function saveCurrent(): Promise<boolean> {
   try {
-    return current ? await current.save() : true;
+    return state.active ? await state.save() : true;
   } catch {
     return false;
   }
 }
-
 export function currentName(): string {
-  try {
-    return current?.name() || "this document";
-  } catch {
-    return "this document";
-  }
+  return state.name || "this document";
+}
+
+let nextToken = 0;
+
+export interface UnsavedGuardOptions {
+  /** True when there are changes worth warning about (since last save/open). */
+  dirty: boolean;
+  /** Human-friendly document name for the prompt / Save button. */
+  name: string;
+  /** Persist the document. Resolve true if handled (saved or downloaded). */
+  save: () => Promise<boolean>;
 }
 
 /**
- * Register this component as the active unsaved-changes guard for as long as it
- * is mounted. The passed getters are read live (latest render's closures).
+ * Register this component as the active guard while mounted, keeping the store
+ * in sync as `dirty`/`name` change (save is read live via a ref).
  */
-export function useUnsavedGuard(guard: DirtyGuard): void {
-  const ref = useRef(guard);
-  ref.current = guard;
+export function useUnsavedGuard({ dirty, name, save }: UnsavedGuardOptions): void {
+  const saveRef = useRef(save);
+  saveRef.current = save;
+  const idRef = useRef(0);
+  if (idRef.current === 0) idRef.current = ++nextToken;
+
+  // Claim the slot on mount; release it on unmount (only if still owner).
   useEffect(() => {
-    const proxy: DirtyGuard = {
-      isDirty: () => ref.current.isDirty(),
-      save: () => ref.current.save(),
-      name: () => ref.current.name(),
-    };
-    current = proxy;
+    const id = idRef.current;
     return () => {
-      if (current === proxy) current = null;
+      if (state.owner === id) {
+        state = IDLE;
+        emit();
+      }
     };
   }, []);
+
+  // Push the latest dirty/name (no cleanup → no transient IDLE flicker).
+  useEffect(() => {
+    state = {
+      active: true,
+      dirty,
+      name,
+      save: () => saveRef.current(),
+      owner: idRef.current,
+    };
+    emit();
+  }, [dirty, name]);
 }

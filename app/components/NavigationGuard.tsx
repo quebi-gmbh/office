@@ -5,17 +5,16 @@
  */
 import { useEffect } from "react";
 import { useBlocker } from "react-router";
-import {
-  currentName,
-  isCurrentlyDirty,
-  saveCurrent,
-} from "~/lib/workspace/dirty-guard";
+import { isCurrentlyDirty, saveCurrent, useGuardState } from "~/lib/workspace";
 import { UnsavedChangesModal } from "./UnsavedChangesModal";
 
 export function NavigationGuard() {
+  const g = useGuardState();
+
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
-      isCurrentlyDirty() &&
+      g.active &&
+      g.dirty &&
       currentLocation.pathname !== nextLocation.pathname,
   );
 
@@ -31,12 +30,10 @@ export function NavigationGuard() {
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, []);
 
-  const blocked = blocker.state === "blocked";
-
   return (
     <UnsavedChangesModal
-      open={blocked}
-      name={currentName()}
+      open={blocker.state === "blocked"}
+      name={g.name || "this document"}
       onSave={async () => {
         const ok = await saveCurrent();
         if (ok) blocker.proceed?.();

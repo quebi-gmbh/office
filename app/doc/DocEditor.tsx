@@ -226,8 +226,21 @@ function DocEditorCore({
   // ── Workspace: open a file handed off from the folder sidebar ───────────────
   const wsHandleRef = useRef<WsFileRef | null>(null);
   const wsFormatRef = useRef<DocFormat>("md");
+  // Unsaved-since-last-save signal for the guard (the hook's `dirty` resets on
+  // draft autosave, so it can't be used to detect unsaved workspace edits).
+  const [wsDirty, setWsDirty] = useState(false);
   const [pendingWs, setPendingWs] = useState<OpenedFile | null>(null);
   usePendingFileOpen("docs", (opened) => setPendingWs(opened));
+
+  // Any editor edit marks the document dirty until the next save.
+  useEffect(() => {
+    if (!editor) return;
+    const onUpdate = () => setWsDirty(true);
+    editor.on("update", onUpdate);
+    return () => {
+      editor.off("update", onUpdate);
+    };
+  }, [editor]);
 
   useEffect(() => {
     if (!editor || !pendingWs) return;
@@ -246,6 +259,7 @@ function DocEditorCore({
       wsFormatRef.current = fmt;
       setTitle(stripExt(opened.name));
       scheduleAutosave();
+      setWsDirty(false);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, pendingWs]);
@@ -267,13 +281,15 @@ function DocEditorCore({
       default:
         await writeText(ref, await exportMarkdown(editor));
     }
+    setWsDirty(false);
     return true;
   };
   const saveWsRef = useRef(saveToWorkspace);
   saveWsRef.current = saveToWorkspace;
 
   useUnsavedGuard({
-    isDirty: () => dirty,
+    dirty: wsDirty,
+    name: title || "Untitled",
     save: async () => {
       const ok = await saveToWorkspace();
       if (!ok && editor) {
@@ -283,9 +299,9 @@ function DocEditorCore({
           "text/markdown",
         );
       }
+      setWsDirty(false);
       return true;
     },
-    name: () => titleRef.current || "Untitled",
   });
 
   // ── handleDocFileAction — used by the command palette ───────────────────────

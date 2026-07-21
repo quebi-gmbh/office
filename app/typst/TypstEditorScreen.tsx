@@ -303,13 +303,12 @@ export function TypstEditorScreen() {
   });
 
   useUnsavedGuard({
-    isDirty: () =>
-      !!wsRef.current && sourceRef.current !== savedSourceRef.current,
+    dirty: !!wsRef.current && source !== savedSourceRef.current,
+    name: wsFileName ?? "Untitled",
     save: async () => {
       await saveToWorkspace();
       return true;
     },
-    name: () => wsFileName ?? "Untitled",
   });
 
   // Ctrl/Cmd-S saves back to the workspace file when one is open, else exports PDF.

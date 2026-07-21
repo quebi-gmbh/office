@@ -14,6 +14,7 @@ import "./app.css";
 import { ClientOnly } from "./components/ClientOnly";
 import { WorkspaceSidebar } from "./components/WorkspaceSidebar";
 import { NavigationGuard } from "./components/NavigationGuard";
+import { SaveButton } from "./components/SaveButton";
 
 /**
  * Document shell. React Router injects per-route <title>/meta via <Meta /> and
@@ -93,6 +94,7 @@ export default function App() {
         <Link to="/" className="font-semibold tracking-tight">
           office.quebi.de
         </Link>
+        <div className="flex items-center gap-4">
         <nav className="flex gap-4">
           <NavLink
             to="/code"
@@ -131,6 +133,8 @@ export default function App() {
             Typst
           </NavLink>
         </nav>
+        <ClientOnly>{() => <SaveButton />}</ClientOnly>
+        </div>
       </header>
       <ClientOnly>{() => <NavigationGuard />}</ClientOnly>
       <div className="flex min-h-0 flex-1">

@@ -68,7 +68,7 @@ export function PdfApp() {
   // Workspace file ref per doc opened from the sidebar; Save writes bytes back.
   const wsRefs = useRef<Map<string, WsFileRef>>(new Map());
   // Doc ids with unsaved edits to their workspace file (for the unsaved guard).
-  const dirtyWsDocs = useRef<Set<string>>(new Set());
+  const [dirtyDocs, setDirtyDocs] = useState<Set<string>>(() => new Set());
 
   const activeDoc = docs.find((d) => d.id === activeDocId) ?? null;
 
@@ -179,7 +179,14 @@ export function PdfApp() {
     invalidateDoc(activeDoc.id);
     setDocs((prev) => prev.map((d) => (d.id === activeDoc.id ? next : d)));
     setPreviewPage((p) => (p !== null && p >= next.pageCount ? null : p));
-    if (wsRefs.current.has(activeDoc.id)) dirtyWsDocs.current.add(activeDoc.id);
+    if (wsRefs.current.has(activeDoc.id)) {
+      setDirtyDocs((s) => {
+        if (s.has(activeDoc.id)) return s;
+        const n = new Set(s);
+        n.add(activeDoc.id);
+        return n;
+      });
+    }
   }, [activeDoc]);
 
   // Update an arbitrary doc (used by ThumbnailGrid's selection callback).
@@ -206,7 +213,12 @@ export function PdfApp() {
           ref,
           new Blob([activeDoc.bytes as BlobPart], { type: "application/pdf" }),
         );
-        dirtyWsDocs.current.delete(activeDoc.id);
+        setDirtyDocs((s) => {
+          if (!s.has(activeDoc.id)) return s;
+          const n = new Set(s);
+          n.delete(activeDoc.id);
+          return n;
+        });
         showToast(`Saved ${activeDoc.name}`);
       } catch (e) {
         showToast(`Save failed: ${(e as Error).message}`, "error");
@@ -218,12 +230,12 @@ export function PdfApp() {
   }, [activeDoc, showToast]);
 
   useUnsavedGuard({
-    isDirty: () => !!activeDoc && dirtyWsDocs.current.has(activeDoc.id),
+    dirty: !!activeDoc && dirtyDocs.has(activeDoc.id),
+    name: activeDoc?.name ?? "PDF",
     save: async () => {
       await saveActive();
       return true;
     },
-    name: () => activeDoc?.name ?? "PDF",
   });
 
   // Keyboard shortcuts.

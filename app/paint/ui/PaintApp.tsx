@@ -67,7 +67,7 @@ export function PaintApp() {
   // Workspace file handle (set when opened from the folder sidebar).
   const wsHandleRef = useRef<WsFileRef | null>(null);
   // Dirty since the workspace image was opened/saved (for the unsaved guard).
-  const wsDirtyRef = useRef(false);
+  const [wsDirty, setWsDirty] = useState(false);
   const wsMimeRef = useRef<ImageMime>("image/png");
   const [wsFileName, setWsFileName] = useState<string | null>(null);
 
@@ -120,7 +120,7 @@ export function PaintApp() {
     if (!canvas) return false;
     const blob = await canvasToBlob(canvas, wsMimeRef.current, 1);
     await writeBlob(ref, blob);
-    wsDirtyRef.current = false;
+    setWsDirty(false);
     return true;
   }
 
@@ -131,16 +131,16 @@ export function PaintApp() {
     wsMimeRef.current = mimeFromName(name);
     setWsFileName(name);
     replaceWithBitmap(bitmap);
-    wsDirtyRef.current = false;
+    setWsDirty(false);
   });
 
   useUnsavedGuard({
-    isDirty: () => !!wsFileName && wsDirtyRef.current,
+    dirty: !!wsFileName && wsDirty,
+    name: wsFileName ?? "Untitled",
     save: async () => {
       await saveToWorkspaceFile();
       return true;
     },
-    name: () => wsFileName ?? "Untitled",
   });
 
   // ─── New-doc dialog wiring ─────────────────────────────────────────────────
@@ -175,7 +175,7 @@ export function PaintApp() {
   // Reset idle timer on pointer activity.
   const notifyActivity = useCallback(() => {
     autosaveRef.current.pointerActivity();
-    if (wsHandleRef.current) wsDirtyRef.current = true;
+    if (wsHandleRef.current) setWsDirty(true);
   }, []);
 
   // ─── Canvas scale for text overlay ────────────────────────────────────────
