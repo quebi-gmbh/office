@@ -243,12 +243,12 @@ function CodeEditor() {
   );
 
   useUnsavedGuard({
-    isDirty: () => fileState.dirty,
+    dirty: fileState.dirty,
+    name: fileState.name ?? "Untitled",
     save: async () => {
       await handleFileAction("save");
       return true;
     },
-    name: () => fileState.name ?? "Untitled",
   });
 
   // ── Format handler ────────────────────────────────────────────────────────

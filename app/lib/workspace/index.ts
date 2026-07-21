@@ -5,4 +5,12 @@ export * from "./use-open";
 export { readFile, writeText, writeBlob, getProvider } from "./provider";
 export type { WorkspaceProvider } from "./provider";
 export { driveConfigured } from "./drive/config";
-export { useUnsavedGuard, type DirtyGuard } from "./dirty-guard";
+export {
+  useUnsavedGuard,
+  useGuardState,
+  saveCurrent,
+  isCurrentlyDirty,
+  currentName,
+  type UnsavedGuardOptions,
+  type GuardState,
+} from "./dirty-guard";
