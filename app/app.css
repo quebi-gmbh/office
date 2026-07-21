@@ -17,7 +17,8 @@
   --color-border: rgba(6, 182, 212, 0.1); /* cyan-500 @ 10% hairline */
   --color-accent: #2dd4a8;               /* quebi teal */
   --color-live:   #2dd4a8;               /* reuse teal for status badges */
-  --color-card:   rgba(255, 255, 255, 0.02); /* barely-there surface */
+  --color-card:   rgba(255, 255, 255, 0.02); /* barely-there inline surface */
+  --color-surface: #0e1524;               /* opaque elevated surface — dialogs, menus, popovers */
 
   /* ── quebi named tokens — for new utilities & components ── */
   --color-quebi-bg:          #030712;
