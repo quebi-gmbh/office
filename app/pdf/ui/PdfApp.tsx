@@ -30,7 +30,12 @@ import { invalidateDoc, probePassword } from "~/pdf/lib/thumb-cache";
 import type { PasswordErrorKind } from "~/pdf/io/pdfjs";
 import { pickPdfFiles, fetchPdfFromUrl, isPdfFile } from "~/pdf/io/load";
 import { downloadBytes, suffixedName } from "~/pdf/io/save";
-import { usePendingFileOpen, writeBlob, type WsFileRef } from "~/lib/workspace";
+import {
+  usePendingFileOpen,
+  useUnsavedGuard,
+  writeBlob,
+  type WsFileRef,
+} from "~/lib/workspace";
 
 import { PagesPanel } from "~/pdf/ui/panels/PagesPanel";
 import { MergePanel } from "~/pdf/ui/panels/MergePanel";
@@ -62,6 +67,8 @@ export function PdfApp() {
 
   // Workspace file ref per doc opened from the sidebar; Save writes bytes back.
   const wsRefs = useRef<Map<string, WsFileRef>>(new Map());
+  // Doc ids with unsaved edits to their workspace file (for the unsaved guard).
+  const dirtyWsDocs = useRef<Set<string>>(new Set());
 
   const activeDoc = docs.find((d) => d.id === activeDocId) ?? null;
 
@@ -172,6 +179,7 @@ export function PdfApp() {
     invalidateDoc(activeDoc.id);
     setDocs((prev) => prev.map((d) => (d.id === activeDoc.id ? next : d)));
     setPreviewPage((p) => (p !== null && p >= next.pageCount ? null : p));
+    if (wsRefs.current.has(activeDoc.id)) dirtyWsDocs.current.add(activeDoc.id);
   }, [activeDoc]);
 
   // Update an arbitrary doc (used by ThumbnailGrid's selection callback).
@@ -189,19 +197,34 @@ export function PdfApp() {
     });
   }, [docs]);
 
-  const saveActive = useCallback(() => {
+  const saveActive = useCallback(async () => {
     if (!activeDoc) return;
     const ref = wsRefs.current.get(activeDoc.id);
     if (ref) {
-      const bytes = activeDoc.bytes;
-      void writeBlob(ref, new Blob([bytes as BlobPart], { type: "application/pdf" }))
-        .then(() => showToast(`Saved ${activeDoc.name}`))
-        .catch((e) => showToast(`Save failed: ${(e as Error).message}`, "error"));
+      try {
+        await writeBlob(
+          ref,
+          new Blob([activeDoc.bytes as BlobPart], { type: "application/pdf" }),
+        );
+        dirtyWsDocs.current.delete(activeDoc.id);
+        showToast(`Saved ${activeDoc.name}`);
+      } catch (e) {
+        showToast(`Save failed: ${(e as Error).message}`, "error");
+      }
       return;
     }
     downloadBytes(activeDoc.bytes, suffixedName(activeDoc.name));
     showToast(`Saved ${suffixedName(activeDoc.name)}`);
   }, [activeDoc, showToast]);
+
+  useUnsavedGuard({
+    isDirty: () => !!activeDoc && dirtyWsDocs.current.has(activeDoc.id),
+    save: async () => {
+      await saveActive();
+      return true;
+    },
+    name: () => activeDoc?.name ?? "PDF",
+  });
 
   // Keyboard shortcuts.
   useEffect(() => {

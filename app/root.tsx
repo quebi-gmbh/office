@@ -13,6 +13,7 @@ import {
 import "./app.css";
 import { ClientOnly } from "./components/ClientOnly";
 import { WorkspaceSidebar } from "./components/WorkspaceSidebar";
+import { NavigationGuard } from "./components/NavigationGuard";
 
 /**
  * Document shell. React Router injects per-route <title>/meta via <Meta /> and
@@ -131,6 +132,7 @@ export default function App() {
           </NavLink>
         </nav>
       </header>
+      <ClientOnly>{() => <NavigationGuard />}</ClientOnly>
       <div className="flex min-h-0 flex-1">
         <ClientOnly>{() => <WorkspaceSidebar />}</ClientOnly>
         <main className="min-w-0 flex-1 overflow-auto">

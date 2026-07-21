@@ -21,7 +21,12 @@ import {
   renderDomInto,
   type DomHandle,
 } from "./typst-runtime";
-import { usePendingFileOpen, writeText, type WsFileRef } from "~/lib/workspace";
+import {
+  usePendingFileOpen,
+  useUnsavedGuard,
+  writeText,
+  type WsFileRef,
+} from "~/lib/workspace";
 import { STARTER_DOC } from "./starter";
 import { typst } from "./typst-language";
 import {
@@ -97,6 +102,7 @@ export function TypstEditorScreen() {
 
   const [wsFileName, setWsFileName] = useState<string | null>(null);
   const wsRef = useRef<WsFileRef | null>(null);
+  const savedSourceRef = useRef<string>("");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -280,6 +286,7 @@ export function TypstEditorScreen() {
     if (!wsRef.current) return false;
     try {
       await writeText(wsRef.current, sourceRef.current);
+      savedSourceRef.current = sourceRef.current;
       flashNotice(`Saved ${wsFileName ?? ""}`.trim());
     } catch (e) {
       flashNotice(`Save failed: ${(e as Error).message}`);
@@ -290,8 +297,19 @@ export function TypstEditorScreen() {
   usePendingFileOpen("typst", async ({ ref, name, file }) => {
     const text = await file.text();
     wsRef.current = ref;
+    savedSourceRef.current = text;
     setWsFileName(name);
     setSource(text);
+  });
+
+  useUnsavedGuard({
+    isDirty: () =>
+      !!wsRef.current && sourceRef.current !== savedSourceRef.current,
+    save: async () => {
+      await saveToWorkspace();
+      return true;
+    },
+    name: () => wsFileName ?? "Untitled",
   });
 
   // Ctrl/Cmd-S saves back to the workspace file when one is open, else exports PDF.
