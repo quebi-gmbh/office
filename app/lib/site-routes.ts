@@ -68,7 +68,7 @@ export const ROUTES: RouteMeta[] = [
     name: "Vector editor",
     eyebrow: "Graphics",
     description:
-      "A browser-based vector graphics editor — draw rectangles, ellipses, polygons, stars, arcs, spirals, lines, pen and freehand paths, and multi-line text; group, align, distribute, and reorder in a layers panel; style with gradients, dashes, arrowheads, and per-channel opacity; boolean union/subtract/intersect; smart guides, grids, and draggable guides; export to SVG, PNG, JPEG, WebP, or PDF, or share by URL. Everything runs client-side; nothing is uploaded.",
+      "A browser-based vector editor — draw shapes, pen and freehand paths, and text; group, align, and restyle with gradients and dashes; export to SVG, PNG, or PDF. All client-side.",
   },
   {
     path: "/table",
@@ -92,7 +92,7 @@ export const ROUTES: RouteMeta[] = [
     name: "CAD tool",
     eyebrow: "3D modelling",
     description:
-      "A browser-based parametric CAD tool — sketch on base planes with constraints and typed dimensions, then extrude, revolve, or combine primitives with booleans into solids. A live feature tree, undo/redo, autosave, share-by-URL, and STL/GLB/PNG export. The geometry kernel (Manifold) runs in a Web Worker via WebAssembly; nothing is uploaded.",
+      "A browser-based parametric CAD tool — sketch with constraints and dimensions, then extrude, revolve, or boolean into solids. Feature tree, autosave, and STL/GLB/PNG export.",
   },
   {
     path: "/typst",
@@ -100,7 +100,7 @@ export const ROUTES: RouteMeta[] = [
     name: "Typst editor",
     eyebrow: "Writing",
     description:
-      "A browser-based Typst editor with syntax highlighting, live preview, and export to PDF, SVG, or PNG — type Typst markup on the left, watch it compile on the right, zoom, and share by link. The compiler runs entirely in your browser via WebAssembly; nothing is uploaded.",
+      "A browser-based Typst editor with syntax highlighting, live preview, and PDF/SVG/PNG export. The compiler runs entirely in your browser — nothing is uploaded.",
   },
 ];
 
