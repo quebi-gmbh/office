@@ -8,7 +8,7 @@ import type { ButtonHTMLAttributes } from "react";
 export type ButtonIntent = "primary" | "ghost" | "danger" | "default";
 
 const INTENTS: Record<ButtonIntent, string> = {
-  primary: "bg-accent text-white hover:opacity-90",
+  primary: "bg-quebi-brand text-quebi-on-brand hover:bg-quebi-brand-hover",
   ghost: "text-muted hover:bg-bg hover:text-fg",
   danger: "bg-red-600 text-white hover:bg-red-700",
   default: "border border-border hover:border-accent/40",

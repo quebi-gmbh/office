@@ -113,7 +113,7 @@ export default function Index() {
         {/* Content */}
         <div className="relative z-10">
           <span className="quebi-eyebrow mb-4 block">quebi GmbH</span>
-          <h1 className="mb-4 text-5xl font-bold tracking-tight text-white sm:text-6xl md:text-7xl">
+          <h1 className="mb-4 text-5xl font-bold tracking-tight text-fg sm:text-6xl md:text-7xl">
             office.quebi.de
           </h1>
           <p className="mb-4 text-lg text-muted">
@@ -147,7 +147,7 @@ export default function Index() {
           <li key={t.to}>
             <Link
               to={t.to}
-              className="group relative block rounded-xl border border-border bg-card p-5 transition duration-300 hover:-translate-y-0.5 hover:border-accent/30 hover:shadow-[0_0_24px_rgba(45,212,168,0.18)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+              className="group relative block rounded-xl border border-border bg-card p-5 transition duration-300 hover:-translate-y-0.5 hover:border-accent/30 hover:shadow-quebi-glow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
             >
               <span
                 className={`absolute right-3 top-3 rounded-full border px-2 py-0.5 text-[0.65rem] font-medium tracking-wider ${

@@ -30,7 +30,7 @@ export function SecurityPanel({ doc, busy, onReplace, onToast }: Props) {
         <div className="text-xs uppercase tracking-wider text-muted">Status</div>
         <div className="mt-1">
           {doc.encrypted ? (
-            <span className="text-amber-400">
+            <span className="text-amber-600">
               Encrypted{doc.password ? " (unlocked for rendering)" : ""}
             </span>
           ) : (

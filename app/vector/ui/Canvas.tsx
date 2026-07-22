@@ -537,7 +537,7 @@ export function Canvas({ engine, state, viewport, containerRef }: Props) {
   const editNode = edit ? state.nodes.find((n) => n.id === edit.id) : null;
 
   return (
-    <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-[#0b1120]">
+    <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-bg">
       <svg
         ref={svgRef}
         className="absolute inset-0 h-full w-full touch-none select-none"
@@ -558,7 +558,7 @@ export function Canvas({ engine, state, viewport, containerRef }: Props) {
             width={doc.width}
             height={doc.height}
             fill={doc.background === "transparent" ? "#ffffff" : doc.background}
-            stroke="#334155"
+            stroke="rgba(11,17,32,0.15)"
             strokeWidth={1 / view.zoom}
           />
           {grid.show && <GridPattern doc={doc} size={grid.size} zoom={view.zoom} />}
@@ -587,8 +587,8 @@ export function Canvas({ engine, state, viewport, containerRef }: Props) {
             y={marquee.y * view.zoom + view.panY}
             width={marquee.w * view.zoom}
             height={marquee.h * view.zoom}
-            fill="rgba(45,212,168,0.12)"
-            stroke="#2dd4a8"
+            fill="rgba(15,157,117,0.10)"
+            stroke="var(--color-accent)"
             strokeDasharray="4 3"
           />
         )}
@@ -653,9 +653,9 @@ function PenPreview({ points, cursor, state }: { points: Point[]; cursor: Point;
   const d = all.map((p, i) => `${i === 0 ? "M" : "L"} ${p[0]} ${p[1]}`).join(" ");
   return (
     <g style={{ pointerEvents: "none" }}>
-      <path d={d} fill="none" stroke={state.defaults.stroke ?? "#2dd4a8"} strokeWidth={state.defaults.strokeWidth} />
+      <path d={d} fill="none" stroke={state.defaults.stroke ?? "var(--color-accent)"} strokeWidth={state.defaults.strokeWidth} />
       {points.map((p, i) => (
-        <circle key={i} cx={p[0]} cy={p[1]} r={3 / state.view.zoom} fill="#2dd4a8" />
+        <circle key={i} cx={p[0]} cy={p[1]} r={3 / state.view.zoom} fill="var(--color-accent)" />
       ))}
     </g>
   );
@@ -691,17 +691,17 @@ function SelectionOverlay({
       <polygon
         points={`${tlx},${tly} ${trx},${try_} ${brx},${bry} ${blx},${bly}`}
         fill="none"
-        stroke="#2dd4a8"
+        stroke="var(--color-accent)"
         strokeWidth={1.5}
         style={{ pointerEvents: "none" }}
       />
-      <line x1={topMid[0]} y1={topMid[1]} x2={rotateAnchor[0]} y2={rotateAnchor[1]} stroke="#2dd4a8" strokeWidth={1} style={{ pointerEvents: "none" }} />
+      <line x1={topMid[0]} y1={topMid[1]} x2={rotateAnchor[0]} y2={rotateAnchor[1]} stroke="var(--color-accent)" strokeWidth={1} style={{ pointerEvents: "none" }} />
       <circle
         cx={rotateAnchor[0]}
         cy={rotateAnchor[1]}
         r={6}
-        fill="#0b1120"
-        stroke="#2dd4a8"
+        fill="#ffffff"
+        stroke="var(--color-accent)"
         strokeWidth={1.5}
         style={{ cursor: "grab" }}
         onPointerDown={onRotateStart}
@@ -715,8 +715,8 @@ function SelectionOverlay({
             y={sy - 5}
             width={10}
             height={10}
-            fill="#0b1120"
-            stroke="#2dd4a8"
+            fill="#ffffff"
+            stroke="var(--color-accent)"
             strokeWidth={1.5}
             style={{ cursor: CURSORS[h.id] }}
             onPointerDown={(e) => onResizeStart(e, h.id)}

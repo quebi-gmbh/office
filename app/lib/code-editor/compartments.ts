@@ -52,17 +52,10 @@ export function buildInitialExtensions(
   comps: CompartmentSet,
   settings: CodeSettings,
 ): Extension[] {
-  const isDark =
-    typeof matchMedia !== "undefined" &&
-    matchMedia("(prefers-color-scheme: dark)").matches;
-
   return [
-    // Theme (also managed by useAutoTheme hook)
-    themeCompartment.of(getThemeExtension(
-      settings.theme.mode === "dark" ? true :
-      settings.theme.mode === "light" ? false :
-      isDark
-    )),
+    // Theme (also managed by useAutoTheme hook). The site chrome is light-only,
+    // so "auto" resolves to the light editor; "dark" is an explicit opt-in.
+    themeCompartment.of(getThemeExtension(settings.theme.mode === "dark")),
     // Line numbers
     comps.lineNumbers.of(settings.display.lineNumbers ? lineNumbers() : []),
     // Active line
@@ -123,15 +116,13 @@ export function applySettings(
     (prev[section] as Record<string, unknown>)[key as string] !==
       (settings[section] as Record<string, unknown>)[key as string];
 
-  // Theme
+  // Theme — "auto" resolves to light (the site chrome is light-only).
   if (!prev || prev.theme.mode !== settings.theme.mode) {
-    const isDark =
-      settings.theme.mode === "dark"
-        ? true
-        : settings.theme.mode === "light"
-          ? false
-          : matchMedia("(prefers-color-scheme: dark)").matches;
-    effects.push(themeCompartment.reconfigure(getThemeExtension(isDark)));
+    effects.push(
+      themeCompartment.reconfigure(
+        getThemeExtension(settings.theme.mode === "dark"),
+      ),
+    );
   }
 
   // Line numbers

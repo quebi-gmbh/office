@@ -57,7 +57,7 @@ export function ContextMenu({
               onClose();
             }}
             className={`block w-full px-3 py-1.5 text-left text-xs hover:bg-border ${
-              item.danger ? "text-red-400" : ""
+              item.danger ? "text-red-600" : ""
             }`}
           >
             {item.label}

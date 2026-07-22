@@ -29,7 +29,7 @@ const Toggle = ({
     aria-checked={checked}
     onClick={() => onChange(!checked)}
     className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
-      checked ? "bg-accent" : "bg-border"
+      checked ? "bg-quebi-brand" : "bg-[#dfe4e8]"
     }`}
   >
     <span

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import { EditorView, keymap } from "@codemirror/view";
-import { oneDark } from "@codemirror/theme-one-dark";
+import { lightThemeExtension } from "../lib/code-editor/theme";
 import {
   AlertTriangle,
   ChevronLeft,
@@ -329,11 +329,11 @@ export function TypstEditorScreen() {
     else void downloadPdfRef.current();
   };
 
-  // CodeMirror extensions (stable): Typst mode, dark theme, our shortcuts.
+  // CodeMirror extensions (stable): Typst mode, Quebi Light theme, our shortcuts.
   const extensions = useMemo(
     () => [
       typst(),
-      oneDark,
+      lightThemeExtension,
       syncHighlight(),
       keymap.of([
         {
@@ -758,7 +758,7 @@ export function TypstEditorScreen() {
             value={source}
             onChange={setSource}
             extensions={extensions}
-            theme={oneDark}
+            theme="none"
             height="100%"
             style={{ height: "100%", fontSize: "13px" }}
             onCreateEditor={(view) => {
@@ -872,7 +872,7 @@ export function TypstEditorScreen() {
           </div>
 
           {status.kind === "error" && (
-            <div className="flex items-start gap-2 border-b border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-500">
+            <div className="flex items-start gap-2 border-b border-red-600/30 bg-red-500/10 px-3 py-2 text-sm text-red-600">
               <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden />
               <pre className="min-w-0 whitespace-pre-wrap break-words font-mono text-xs">
                 {status.message}
@@ -979,10 +979,10 @@ function StatusPill({
     className = "text-accent border-accent/30";
   } else if (status.kind === "error") {
     label = "error";
-    className = "text-red-500 border-red-500/30";
+    className = "text-red-600 border-red-600/30";
   } else if (stale) {
     label = "stale";
-    className = "text-amber-500 border-amber-500/30";
+    className = "text-amber-600 border-amber-600/30";
   } else {
     label = lastMs != null ? `compiled in ${lastMs}ms` : "ready";
     className = "text-accent border-accent/30";

@@ -29,7 +29,7 @@ export function PasswordPrompt({ incorrect, busy, onSubmit }: Props) {
       onSubmit={submit}
       className="flex flex-col gap-2 rounded-xl border border-amber-400/40 bg-amber-400/10 p-3 text-sm"
     >
-      <div className="flex items-center gap-2 text-amber-400">
+      <div className="flex items-center gap-2 text-amber-600">
         <Lock size={14} aria-hidden />
         <span className="font-medium">
           {incorrect ? "Incorrect password" : "This PDF is password-protected"}

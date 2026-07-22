@@ -37,7 +37,7 @@ export function HistoryModal({ onClose, onSnapshot, onRestore }: HistoryModalPro
               </div>
               <div className="ml-2 flex shrink-0 gap-1">
                 <button type="button" onClick={() => onRestore(s)} className="rounded border border-border bg-card px-2 py-0.5 hover:border-accent">Restore</button>
-                <button type="button" onClick={() => { deleteSnapshot(s.id); refresh(); }} className="rounded p-1 text-muted hover:text-red-400"><X size={12} /></button>
+                <button type="button" onClick={() => { deleteSnapshot(s.id); refresh(); }} className="rounded p-1 text-muted hover:text-red-600"><X size={12} /></button>
               </div>
             </li>
           ))}

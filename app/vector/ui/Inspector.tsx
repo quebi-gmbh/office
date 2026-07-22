@@ -45,7 +45,7 @@ function ColorControl({
           style={{
             background: active
               ? (value as string)
-              : "repeating-conic-gradient(#64748b 0% 25%, #334155 0% 50%) 50% / 10px 10px",
+              : "repeating-conic-gradient(#ccc 0% 25%, #fff 0% 50%) 50% / 10px 10px",
           }}
         />
         <input
@@ -253,7 +253,7 @@ function DocSection({ engine, state }: { engine: VectorEngine; state: VectorStat
             className="block h-full w-full"
             style={{
               background: transparent
-                ? "repeating-conic-gradient(#64748b 0% 25%, #334155 0% 50%) 50% / 10px 10px"
+                ? "repeating-conic-gradient(#ccc 0% 25%, #fff 0% 50%) 50% / 10px 10px"
                 : state.doc.background,
             }}
           />

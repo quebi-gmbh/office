@@ -103,7 +103,7 @@ export function ImagesToPdfPanel({ busy, onAddOpened, onToast }: Props) {
               <button
                 type="button"
                 onClick={() => remove(s.id)}
-                className="rounded px-1 text-muted hover:text-red-400"
+                className="rounded px-1 text-muted hover:text-red-600"
                 aria-label="Remove"
               >✕</button>
             </li>

@@ -38,7 +38,7 @@ export function ExportDialog({ scene, onClose }: { scene: VectorScene; onClose: 
               type="button"
               onClick={() => setFormat(f)}
               className={`flex-1 rounded border px-3 py-2 text-sm uppercase ${
-                format === f ? "border-accent bg-accent/15 text-accent" : "border-border text-muted hover:text-fg"
+                format === f ? "border-accent bg-quebi-brand/15 text-accent" : "border-border text-muted hover:text-fg"
               }`}
             >
               {f}
@@ -68,7 +68,7 @@ export function ExportDialog({ scene, onClose }: { scene: VectorScene; onClose: 
             type="button"
             disabled={busy}
             onClick={doExport}
-            className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-black hover:opacity-90 disabled:opacity-50"
+            className="rounded bg-quebi-brand px-3 py-1.5 text-sm font-medium text-quebi-on-brand hover:bg-quebi-brand-hover disabled:opacity-50"
           >
             {busy ? "Exporting…" : "Download"}
           </button>
