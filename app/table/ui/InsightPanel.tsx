@@ -76,7 +76,7 @@ export function InsightPanel({ doc, rect, onClose, onAddRule, onRemoveRule, onSe
               {kind === "custom" && (
                 <>
                   <input value={expr} onChange={(e) => setExpr(e.target.value)} placeholder="x > 100" className="rounded border border-border bg-card px-1.5 py-0.5 font-mono" />
-                  {exprError && <span className="text-red-400">{exprError}</span>}
+                  {exprError && <span className="text-red-600">{exprError}</span>}
                 </>
               )}
               <button type="button" onClick={addRule} disabled={!!exprError} className="rounded border border-accent bg-accent/20 px-2 py-1 text-accent hover:bg-accent/30 disabled:opacity-40">
@@ -91,7 +91,7 @@ export function InsightPanel({ doc, rect, onClose, onAddRule, onRemoveRule, onSe
                     {rule.kind === "custom" ? `if ${rule.expr}` : rule.kind === "dataBar" ? "Data bars" : "Colour scale"}{" "}
                     <span className="text-muted">{colToLabel(rule.range.c0)}{rule.range.r0 + 1}:{colToLabel(rule.range.c1)}{rule.range.r1 + 1}</span>
                   </span>
-                  <button type="button" onClick={() => onRemoveRule(i)} className="ml-1 text-muted hover:text-red-400"><X size={12} /></button>
+                  <button type="button" onClick={() => onRemoveRule(i)} className="ml-1 text-muted hover:text-red-600"><X size={12} /></button>
                 </li>
               ))}
               {rules.length === 0 && <li className="text-muted">No rules yet.</li>}

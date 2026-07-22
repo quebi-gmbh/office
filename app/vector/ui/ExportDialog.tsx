@@ -103,7 +103,7 @@ export function ExportDialog({
             type="button"
             disabled={busy}
             onClick={doExport}
-            className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-black hover:opacity-90 disabled:opacity-50"
+            className="rounded bg-quebi-brand px-3 py-1.5 text-sm font-medium text-quebi-on-brand hover:bg-quebi-brand-hover disabled:opacity-50"
           >
             {busy ? "Exporting…" : "Download"}
           </button>

@@ -33,8 +33,9 @@ const syncLineField = StateField.define<DecorationSet>({
 
 const syncLineTheme = EditorView.theme({
   ".cm-syncLine": {
-    backgroundColor: "rgba(45, 212, 168, 0.16)",
-    boxShadow: "inset 2px 0 0 rgba(45, 212, 168, 0.8)",
+    // Quebi mint wash + mint-strong edge bar, tuned for the light editor.
+    backgroundColor: "rgba(45, 212, 168, 0.18)",
+    boxShadow: "inset 2px 0 0 #14b88f",
   },
 });
 

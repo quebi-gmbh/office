@@ -319,7 +319,7 @@ export function PdfApp() {
           {activeDoc && (
             <span className="text-sm text-muted">
               {activeDoc.name} · {activeDoc.pageCount} page{activeDoc.pageCount === 1 ? "" : "s"}
-              {activeDoc.encrypted && <span className="ml-2 text-amber-400">encrypted</span>}
+              {activeDoc.encrypted && <span className="ml-2 text-amber-600">encrypted</span>}
             </span>
           )}
         </div>

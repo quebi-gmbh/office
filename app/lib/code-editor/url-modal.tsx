@@ -72,7 +72,7 @@ export function UrlModal({ open, onClose, onLoad }: UrlModalProps) {
           className="w-full rounded border border-border bg-bg px-3 py-2 text-sm focus:border-accent focus:outline-none"
         />
         {error && (
-          <p className="text-sm text-red-500">{error}</p>
+          <p className="text-sm text-red-600">{error}</p>
         )}
         <div className="flex justify-end gap-2">
           <button
@@ -85,7 +85,7 @@ export function UrlModal({ open, onClose, onLoad }: UrlModalProps) {
           <button
             type="submit"
             disabled={loading}
-            className="rounded bg-accent px-3 py-1.5 text-sm text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
+            className="rounded bg-quebi-brand px-3 py-1.5 text-sm text-quebi-on-brand hover:bg-quebi-brand-hover disabled:opacity-50 transition-colors"
           >
             {loading ? "Loading…" : "Open"}
           </button>

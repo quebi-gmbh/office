@@ -48,9 +48,12 @@ Tailwind CSS v4, configured CSS-first.
 2. **Theme tokens drive colors.** Use the semantic utilities
    (`bg-bg`, `text-fg`, `border-border`, `text-muted`, `bg-card`,
    `text-accent`) instead of raw Tailwind palette classes
-   (`bg-zinc-50`, `text-blue-600`, …). Dark mode is system-driven via
-   `prefers-color-scheme` — the tokens flip automatically, so no `dark:`
-   modifiers are needed in component code.
+   (`bg-zinc-50`, `text-blue-600`, …). The app ships the **Quebi Light**
+   theme (see the Quebi Light design guide): near-white page, white panels,
+   `--color-accent` is the deepened mint-ink (`#0f9d75`) for legible text,
+   while `--color-quebi-brand` (`#2dd4a8`) is reserved for fills with
+   `--color-quebi-on-brand` text. No `dark:` modifiers in component code —
+   any future dark variant rebinds the tokens.
 
 3. **Reuse via components, not `@apply`.** When a class set repeats, extract
    a React component. Treat `@apply` as an escape hatch reserved for the rare

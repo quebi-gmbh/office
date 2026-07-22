@@ -393,7 +393,7 @@ export function SketchEditor({ sketchId }: { sketchId: string }) {
           title="Delete selection"
           onClick={deleteSelection}
           disabled={selEntities.length === 0}
-          className="rounded-md border border-border p-1.5 text-muted hover:text-red-400 disabled:opacity-40"
+          className="rounded-md border border-border p-1.5 text-muted hover:text-red-600 disabled:opacity-40"
         >
           <Trash2 size={16} aria-hidden />
         </button>
@@ -419,9 +419,9 @@ export function SketchEditor({ sketchId }: { sketchId: string }) {
             <span
               className={
                 solveInfo.status === "over"
-                  ? " text-red-400"
+                  ? " text-red-600"
                   : solveInfo.status === "under"
-                    ? " text-amber-400"
+                    ? " text-amber-600"
                     : " text-accent"
               }
             >
@@ -439,7 +439,7 @@ export function SketchEditor({ sketchId }: { sketchId: string }) {
       </div>
 
       {/* Canvas */}
-      <div ref={wrapRef} className="relative min-h-0 flex-1 overflow-hidden bg-[#0b0f17]">
+      <div ref={wrapRef} className="relative min-h-0 flex-1 overflow-hidden bg-bg">
         <svg
           ref={svgRef}
           className="absolute inset-0 h-full w-full touch-none"
@@ -451,11 +451,11 @@ export function SketchEditor({ sketchId }: { sketchId: string }) {
         >
           {/* Grid */}
           {gridLines.map((l, i) => (
-            <line key={i} x1={l[0]} y1={l[1]} x2={l[2]} y2={l[3]} stroke="#1a2230" strokeWidth={1} />
+            <line key={i} x1={l[0]} y1={l[1]} x2={l[2]} y2={l[3]} stroke="#e3e7ec" strokeWidth={1} />
           ))}
           {/* Axes */}
-          <line x1={0} y1={view.oy} x2={size.w} y2={view.oy} stroke="#3a4152" strokeWidth={1.2} />
-          <line x1={view.ox} y1={0} x2={view.ox} y2={size.h} stroke="#3a4152" strokeWidth={1.2} />
+          <line x1={0} y1={view.oy} x2={size.w} y2={view.oy} stroke="#9aa4b2" strokeWidth={1.2} />
+          <line x1={view.ox} y1={0} x2={view.ox} y2={size.h} stroke="#9aa4b2" strokeWidth={1.2} />
 
           {/* Entities */}
           {entities.map((e) => (
@@ -479,8 +479,8 @@ export function SketchEditor({ sketchId }: { sketchId: string }) {
                     cx={sx}
                     cy={sy}
                     r={selected ? 5 : 3.2}
-                    fill={selected ? "#2dd4a8" : "#0b0f17"}
-                    stroke="#9db4d0"
+                    fill={selected ? "var(--color-accent)" : "#ffffff"}
+                    stroke="#64748b"
                     strokeWidth={1.2}
                   />
                 );
@@ -497,7 +497,7 @@ export function SketchEditor({ sketchId }: { sketchId: string }) {
               cy={worldToScreen(view, pointer)[1]}
               r={4}
               fill="none"
-              stroke="#2dd4a8"
+              stroke="var(--color-accent)"
               strokeWidth={1.2}
             />
           )}
@@ -578,7 +578,7 @@ function constraintTouchesEntities(c: Constraint, ids: Set<string>): boolean {
 }
 
 function EntityShape({ entity, view, selected }: { entity: SketchEntity; view: View; selected: boolean }) {
-  const stroke = selected ? "#2dd4a8" : "#9db4d0";
+  const stroke = selected ? "var(--color-accent)" : "#475569";
   const sw = selected ? 2.2 : 1.6;
   switch (entity.type) {
     case "line": {
@@ -622,7 +622,7 @@ function EntityShape({ entity, view, selected }: { entity: SketchEntity; view: V
 function DraftPreview({ tool, draft, pointer, view }: { tool: Tool; draft: Vec2[]; pointer: Vec2 | null; view: View }) {
   if (draft.length === 0 || !pointer) return null;
   const s = (p: Vec2) => worldToScreen(view, p);
-  const color = "#facc15";
+  const color = "#b45309";
   if (tool === "line" && draft.length === 1) {
     const a = s(draft[0]);
     const b = s(pointer);

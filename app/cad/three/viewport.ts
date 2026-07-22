@@ -54,7 +54,7 @@ export class Viewport {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(w, h);
-    this.renderer.setClearColor(0x0b0f17, 1);
+    this.renderer.setClearColor(0xf4f6f6, 1);
     container.appendChild(this.renderer.domElement);
     this.renderer.domElement.style.display = "block";
     this.renderer.domElement.style.touchAction = "none";
@@ -93,7 +93,7 @@ export class Viewport {
     this.scene.add(fill);
 
     // Ground grid (XY plane) + origin axes.
-    this.grid = new THREE.GridHelper(400, 40, 0x3a4152, 0x232a38);
+    this.grid = new THREE.GridHelper(400, 40, 0xb8c0ca, 0xdfe4e8);
     this.grid.rotation.x = Math.PI / 2; // XZ → XY
     this.scene.add(this.grid);
     this.axes = new THREE.AxesHelper(60);

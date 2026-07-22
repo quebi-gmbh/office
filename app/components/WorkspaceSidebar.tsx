@@ -231,7 +231,7 @@ export function WorkspaceSidebar() {
         ) : ws.status === "loading" ? (
           <p className="p-2 text-xs text-muted">Reading workspace…</p>
         ) : ws.status === "error" ? (
-          <p className="p-2 text-xs text-red-400">
+          <p className="p-2 text-xs text-red-600">
             Couldn't read workspace: {ws.error}
           </p>
         ) : ws.tree.length === 0 ? (

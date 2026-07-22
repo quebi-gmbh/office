@@ -121,7 +121,7 @@ export function FeatureTree() {
                 <button
                   type="button"
                   title="Delete"
-                  className="rounded p-0.5 text-muted hover:text-red-400"
+                  className="rounded p-0.5 text-muted hover:text-red-600"
                   onClick={() => store.getState().removeFeature(f.id)}
                 >
                   <Trash2 size={12} aria-hidden />

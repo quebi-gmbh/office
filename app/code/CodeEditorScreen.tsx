@@ -411,7 +411,7 @@ function CodeEditor() {
               onClick={() => setPreviewOpen((o) => !o)}
               className={`rounded px-2 py-1 text-xs transition-colors ${
                 previewOpen
-                  ? "bg-accent text-white"
+                  ? "bg-quebi-brand text-quebi-on-brand"
                   : "text-muted hover:bg-border hover:text-fg"
               }`}
             >

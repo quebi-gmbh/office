@@ -27,8 +27,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="color-scheme" content="dark" />
-        <meta name="theme-color" content="#030712" />
+        <meta name="color-scheme" content="light" />
+        <meta name="theme-color" content="#f4f6f6" />
         <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
         <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
         <link rel="icon" type="image/png" sizes="128x128" href="/favicon-128x128.png" />
@@ -176,7 +176,7 @@ export default function App() {
           href="https://github.com/quebi-gmbh/office"
           target="_blank"
           rel="noreferrer"
-          className="hover:text-white"
+          className="hover:text-fg"
         >
           source on github
         </a>

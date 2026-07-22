@@ -16,10 +16,11 @@ import { ROUTES } from "../app/lib/site-routes";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OG_OUT = join(ROOT, "public/og");
 
-const BG = "#030712";
-const BRAND = "#2dd4a8";
-const FG = "#ffffff";
-const MUTED = "#9ca3af";
+// Quebi Light palette (see the Quebi Light design guide / app.css @theme).
+const BG = "#f4f6f6";
+const BRAND = "#0f9d75"; // mint-ink — legible mint on light
+const FG = "#0b1120";
+const MUTED = "#4b5563";
 
 // satori takes a React-element-shaped object literal (no JSX needed here).
 function el(type: string, props: Record<string, unknown>, children?: unknown) {

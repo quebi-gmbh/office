@@ -76,7 +76,7 @@ export function NewDocDialog({
           <button
             type="button"
             onClick={() => onConfirm(w, h, transparent ? "transparent" : bg)}
-            className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-black hover:opacity-90"
+            className="rounded bg-quebi-brand px-3 py-1.5 text-sm font-medium text-quebi-on-brand hover:bg-quebi-brand-hover"
           >
             Create
           </button>

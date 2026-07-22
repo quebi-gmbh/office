@@ -19,7 +19,7 @@ export function StatusBar() {
       <span className="flex items-center gap-1.5">
         {status === "pending" && <Loader2 size={13} className="animate-spin" aria-hidden />}
         {status === "ok" && <CheckCircle2 size={13} className="text-accent" aria-hidden />}
-        {status === "error" && <XCircle size={13} className="text-red-400" aria-hidden />}
+        {status === "error" && <XCircle size={13} className="text-red-600" aria-hidden />}
         {status === "pending" ? "Evaluating…" : status === "error" ? "Error" : "Ready"}
       </span>
 
@@ -31,10 +31,10 @@ export function StatusBar() {
         </>
       )}
 
-      {error && <span className="truncate text-red-400">{error}</span>}
+      {error && <span className="truncate text-red-600">{error}</span>}
 
       {warnings.length > 0 && (
-        <span className="flex items-center gap-1.5 truncate text-amber-400">
+        <span className="flex items-center gap-1.5 truncate text-amber-600">
           <AlertTriangle size={13} aria-hidden />
           {warnings.join(" · ")}
         </span>

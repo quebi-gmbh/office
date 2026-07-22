@@ -33,7 +33,7 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 export function RestoreBanner({ name, onRestore, onDiscard }: { name: string; onRestore: () => void; onDiscard: () => void }) {
   return (
     <div className="flex items-center gap-3 border-b border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm">
-      <RotateCcw size={15} aria-hidden className="text-amber-400" />
+      <RotateCcw size={15} aria-hidden className="text-amber-600" />
       <span>
         Restore your last session{name ? ` — “${name}”` : ""}?
       </span>
@@ -127,7 +127,7 @@ export function OpenDialog({ onClose, onOpen }: { onClose: () => void; onOpen: (
                   deleteNamedDoc(d.name);
                   setDocs(listSavedDocs());
                 }}
-                className="rounded p-1 text-muted hover:text-red-400"
+                className="rounded p-1 text-muted hover:text-red-600"
               >
                 <Trash2 size={14} aria-hidden />
               </button>
@@ -197,7 +197,7 @@ export function ExportDialog({ onClose, snapshot }: { onClose: () => void; snaps
 
   return (
     <Modal title="Export" onClose={onClose}>
-      {!hasMesh && <p className="mb-3 text-xs text-amber-400">The model is empty — add a solid feature first.</p>}
+      {!hasMesh && <p className="mb-3 text-xs text-amber-600">The model is empty — add a solid feature first.</p>}
       <div className="flex flex-col gap-2">
         <div className={row}>
           <span>STL — watertight mesh for 3-D printing</span>

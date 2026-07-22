@@ -59,7 +59,7 @@ export function ViewportView({ registerSnapshot }: { registerSnapshot: (fn: () =
   const activeBtn = "rounded-md border border-accent bg-card/90 p-1.5 text-accent";
 
   return (
-    <div className="relative min-h-0 flex-1 bg-[#0b0f17]" data-full-bleed>
+    <div className="relative min-h-0 flex-1 bg-bg" data-full-bleed>
       <div ref={containerRef} className="absolute inset-0" />
 
       {/* View gizmo */}
