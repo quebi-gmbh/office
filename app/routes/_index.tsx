@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import {
+  Boxes,
   Code2,
   FileText,
   FileType,
@@ -65,6 +66,13 @@ const tools: Tool[] = [
     blurb: "Merge, split, rotate, crop, watermark, stamp, fill forms, edit metadata, extract text, build PDFs from images — all client-side via pdf-lib + pdfjs.",
     status: "live",
     icon: <FileType size={20} aria-hidden />,
+  },
+  {
+    to: "/cad",
+    name: "CAD tool",
+    blurb: "Sketch on base planes with constraints and typed dimensions, then extrude, revolve, or combine primitives with booleans. Feature tree, undo/redo, autosave, and STL/GLB/PNG export — the Manifold kernel runs in a Web Worker.",
+    status: "live",
+    icon: <Boxes size={20} aria-hidden />,
   },
   {
     to: "/typst",

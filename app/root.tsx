@@ -127,6 +127,12 @@ export default function App() {
             Table
           </NavLink>
           <NavLink
+            to="/cad"
+            className={({ isActive }) => (isActive ? "text-accent" : "")}
+          >
+            CAD
+          </NavLink>
+          <NavLink
             to="/pdf"
             className={({ isActive }) => (isActive ? "text-accent" : "")}
           >

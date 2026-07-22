@@ -68,7 +68,7 @@ export const ROUTES: RouteMeta[] = [
     name: "Vector editor",
     eyebrow: "Graphics",
     description:
-      "A browser-based vector graphics editor — draw rectangles, ellipses, lines, freehand and pen paths, and text; select, move, resize, rotate, and restyle with fills, strokes, and opacity; snap to a grid, undo/redo, autosave, and export to SVG or PNG. Everything runs client-side; nothing is uploaded.",
+      "A browser-based vector graphics editor — draw rectangles, ellipses, polygons, stars, arcs, spirals, lines, pen and freehand paths, and multi-line text; group, align, distribute, and reorder in a layers panel; style with gradients, dashes, arrowheads, and per-channel opacity; boolean union/subtract/intersect; smart guides, grids, and draggable guides; export to SVG, PNG, JPEG, WebP, or PDF, or share by URL. Everything runs client-side; nothing is uploaded.",
   },
   {
     path: "/table",
@@ -85,6 +85,14 @@ export const ROUTES: RouteMeta[] = [
     eyebrow: "Documents",
     description:
       "Client-side PDF tools — merge, split, crop, rotate, watermark, fill forms, edit metadata, and extract text or images. Your files never leave the browser.",
+  },
+  {
+    path: "/cad",
+    slug: "cad",
+    name: "CAD tool",
+    eyebrow: "3D modelling",
+    description:
+      "A browser-based parametric CAD tool — sketch on base planes with constraints and typed dimensions, then extrude, revolve, or combine primitives with booleans into solids. A live feature tree, undo/redo, autosave, share-by-URL, and STL/GLB/PNG export. The geometry kernel (Manifold) runs in a Web Worker via WebAssembly; nothing is uploaded.",
   },
   {
     path: "/typst",

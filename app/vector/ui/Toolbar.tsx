@@ -1,14 +1,21 @@
 /**
- * Top toolbar: tool picker + document/edit/z-order/view actions. Purely
+ * Top toolbar: tool picker + document/edit/arrange/z-order/view actions. Purely
  * presentational — every action delegates to the engine or a prop callback.
  */
 import {
   BringToFront,
   Circle,
+  ClipboardCopy,
+  Combine,
   CopyPlus,
+  Crosshair,
   Download,
   FilePlus2,
   Grid2x2,
+  Group,
+  Hexagon,
+  Image as ImageIcon,
+  Layers,
   Magnet,
   Maximize,
   Minus,
@@ -19,10 +26,15 @@ import {
   RectangleHorizontal,
   Redo2,
   SendToBack,
+  Share2,
+  Shell,
+  Spline,
   Square,
+  Star,
   Trash2,
   Type,
   Undo2,
+  Ungroup,
   Upload,
   Waypoints,
   ZoomIn,
@@ -38,11 +50,16 @@ interface Props {
   onNewDoc: () => void;
   onImport: () => void;
   onExport: () => void;
+  onPlaceImage: () => void;
+  onCopySvg: () => void;
+  onShare: () => void;
   onFit: () => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
   showRulers: boolean;
   onToggleRulers: () => void;
+  showLayers: boolean;
+  onToggleLayers: () => void;
 }
 
 const TOOLS: { id: ToolId; icon: ComponentType<{ size?: number }>; label: string; key: string }[] = [
@@ -50,6 +67,10 @@ const TOOLS: { id: ToolId; icon: ComponentType<{ size?: number }>; label: string
   { id: "rect", icon: Square, label: "Rectangle", key: "R" },
   { id: "rounded-rect", icon: RectangleHorizontal, label: "Rounded rectangle", key: "" },
   { id: "ellipse", icon: Circle, label: "Ellipse", key: "O" },
+  { id: "polygon", icon: Hexagon, label: "Polygon", key: "G" },
+  { id: "star", icon: Star, label: "Star", key: "S" },
+  { id: "arc", icon: Spline, label: "Arc", key: "" },
+  { id: "spiral", icon: Shell, label: "Spiral", key: "" },
   { id: "line", icon: Minus, label: "Line", key: "L" },
   { id: "polyline", icon: Waypoints, label: "Polyline", key: "" },
   { id: "pen", icon: PenTool, label: "Pen (click to place points)", key: "P" },
@@ -104,13 +125,19 @@ export function Toolbar({
   onNewDoc,
   onImport,
   onExport,
+  onPlaceImage,
+  onCopySvg,
+  onShare,
   onFit,
   onZoomIn,
   onZoomOut,
   showRulers,
   onToggleRulers,
+  showLayers,
+  onToggleLayers,
 }: Props) {
   const hasSelection = state.selection.length > 0;
+  const multi = state.selection.length >= 2;
   return (
     <div className="flex flex-wrap items-center gap-1 border-b border-border bg-card px-3 py-2">
       {/* Tools */}
@@ -149,6 +176,15 @@ export function Toolbar({
       <IconBtn title="Delete (⌫)" disabled={!hasSelection} onClick={() => engine.deleteSelection()}>
         <Trash2 size={18} />
       </IconBtn>
+      <IconBtn title="Group (⌘G)" disabled={!multi} onClick={() => engine.group()}>
+        <Group size={18} />
+      </IconBtn>
+      <IconBtn title="Ungroup (⌘⇧G)" disabled={!hasSelection} onClick={() => engine.ungroup()}>
+        <Ungroup size={18} />
+      </IconBtn>
+      <IconBtn title="Union (boolean)" disabled={!multi} onClick={() => engine.booleanOp("union")}>
+        <Combine size={18} />
+      </IconBtn>
       <IconBtn title="Bring to front (⌘])" disabled={!hasSelection} onClick={() => engine.bringToFront()}>
         <BringToFront size={18} />
       </IconBtn>
@@ -158,15 +194,21 @@ export function Toolbar({
 
       <Divider />
 
-      {/* Grid / snap / rulers */}
+      {/* Grid / snap / rulers / layers */}
       <IconBtn title="Show grid" active={state.grid.show} onClick={() => engine.setGrid({ show: !state.grid.show })}>
         <Grid2x2 size={18} />
       </IconBtn>
       <IconBtn title="Snap to grid" active={state.grid.snap} onClick={() => engine.setGrid({ snap: !state.grid.snap })}>
         <Magnet size={18} />
       </IconBtn>
+      <IconBtn title="Snap to objects (smart guides)" active={state.grid.snapObjects} onClick={() => engine.setGrid({ snapObjects: !state.grid.snapObjects })}>
+        <Crosshair size={18} />
+      </IconBtn>
       <IconBtn title="Toggle rulers" active={showRulers} onClick={onToggleRulers}>
         <Ruler size={18} />
+      </IconBtn>
+      <IconBtn title="Layers panel" active={showLayers} onClick={onToggleLayers}>
+        <Layers size={18} />
       </IconBtn>
 
       <Divider />
@@ -183,6 +225,15 @@ export function Toolbar({
       </IconBtn>
 
       <div className="ml-auto flex items-center gap-1">
+        <IconBtn title="Place image…" onClick={onPlaceImage}>
+          <ImageIcon size={18} />
+        </IconBtn>
+        <IconBtn title="Copy as SVG markup" onClick={onCopySvg}>
+          <ClipboardCopy size={18} />
+        </IconBtn>
+        <IconBtn title="Share by URL" onClick={onShare}>
+          <Share2 size={18} />
+        </IconBtn>
         <IconBtn title="New document" onClick={onNewDoc}>
           <FilePlus2 size={18} />
         </IconBtn>
