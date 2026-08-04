@@ -133,6 +133,61 @@ export function compileSvg(source: string): Promise<CompileResult> {
   });
 }
 
+/**
+ * Outcome of a coalescing preview compile. `superseded` means a newer request
+ * replaced this one before it ever started — the caller must leave the UI alone
+ * and let the newer request own the result.
+ */
+export type PreviewCompile =
+  | { kind: "ok"; svg: string }
+  | { kind: "superseded" };
+
+interface QueuedPreview {
+  source: string;
+  resolve: (result: PreviewCompile) => void;
+  reject: (err: unknown) => void;
+}
+
+let queuedPreview: QueuedPreview | null = null;
+let previewRunning = false;
+
+async function drainPreviewQueue(): Promise<void> {
+  if (previewRunning) return;
+  previewRunning = true;
+  try {
+    while (queuedPreview) {
+      const job = queuedPreview;
+      queuedPreview = null;
+      try {
+        const { svg } = await compileSvg(job.source);
+        job.resolve({ kind: "ok", svg });
+      } catch (err) {
+        job.reject(err);
+      }
+    }
+  } finally {
+    previewRunning = false;
+  }
+}
+
+/**
+ * Compile for the *preview*, keeping at most one compile in flight and at most
+ * one queued: a request that arrives while another is already waiting replaces
+ * it, and the replaced one resolves as `superseded`.
+ *
+ * The shared `$typst` singleton can only run one job at a time anyway, so
+ * without this a burst of edits would queue up a compile per edit and the UI
+ * would stay busy long after the user stopped typing — and a slow compile could
+ * land after a newer one and overwrite the preview with stale output.
+ */
+export function compileSvgLatest(source: string): Promise<PreviewCompile> {
+  return new Promise<PreviewCompile>((resolve, reject) => {
+    if (queuedPreview) queuedPreview.resolve({ kind: "superseded" });
+    queuedPreview = { source, resolve, reject };
+    void drainPreviewQueue();
+  });
+}
+
 /** Compile Typst source to PDF bytes. Throws with a readable message. */
 export function compilePdf(source: string): Promise<Uint8Array> {
   return serialize(async () => {

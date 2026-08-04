@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import { EditorView, keymap } from "@codemirror/view";
 import { lightThemeExtension } from "../lib/code-editor/theme";
@@ -19,7 +26,7 @@ import {
 } from "lucide-react";
 import {
   compilePdf,
-  compileSvg,
+  compileSvgLatest,
   getTypst,
   renderDomInto,
   type DomHandle,
@@ -33,13 +40,20 @@ import {
 import { STARTER_DOC } from "./starter";
 import { typst } from "./typst-language";
 import {
-  buildSections,
+  clamp,
   fractionToOffset,
-  offsetToFraction,
-  sectionBand,
   sectionIndexForOffset,
-  type Section,
+  sectionsForSource,
 } from "./sync-map";
+import {
+  clientYToPageTarget,
+  containerYToFraction,
+  pageElements,
+  pageHeightOf,
+  pageHeights,
+  pageTargetToFraction,
+  type PageTarget,
+} from "./preview-coords";
 import { setSyncLine, syncHighlight } from "./sync-highlight";
 import { countPages, splitSvgPages } from "./svg-pages";
 import {
@@ -50,11 +64,15 @@ import {
 } from "./export-utils";
 
 type PreviewMode = "svg" | "text";
-/** Vertical band [top, height] as fractions of the preview content height. */
-type Band = { top: number; height: number };
 
 const STORAGE_KEY = "typst:source";
-const COMPILE_DEBOUNCE_MS = 400;
+/** Debounce floor/ceiling for the auto-compile (see {@link compileDebounceMs}). */
+const COMPILE_DEBOUNCE_MIN_MS = 600;
+const COMPILE_DEBOUNCE_MAX_MS = 2000;
+/** How long a preview → source jump stays highlighted in the editor. */
+const HIGHLIGHT_MS = 1600;
+/** Debounce for the (synchronous, whole-document) localStorage write. */
+const STORAGE_DEBOUNCE_MS = 500;
 const ZOOM_MIN = 0.25;
 const ZOOM_MAX = 4;
 
@@ -77,16 +95,30 @@ function loadInitialSource(): string {
   }
 }
 
-/** Current scroll position of an element as a fraction [0, 1] of its range. */
-function scrollFraction(el: HTMLElement): number {
-  const range = el.scrollHeight - el.clientHeight;
-  return range > 0 ? el.scrollTop / range : 0;
+/**
+ * Wait roughly as long as the last compile took before starting the next one:
+ * a fixed short debounce means a big document spends all its time compiling
+ * stale input while the user is still typing.
+ */
+function compileDebounceMs(lastCompileMs: number | null): number {
+  return clamp(
+    lastCompileMs ?? COMPILE_DEBOUNCE_MIN_MS,
+    COMPILE_DEBOUNCE_MIN_MS,
+    COMPILE_DEBOUNCE_MAX_MS,
+  );
 }
 
-/** Scroll an element to a fraction [0, 1] of its range. */
-function setScrollFraction(el: HTMLElement, fraction: number): void {
-  const range = el.scrollHeight - el.clientHeight;
-  el.scrollTop = Math.max(0, Math.min(1, fraction)) * range;
+/**
+ * A ref that always holds the latest render's value, updated in an effect
+ * rather than during render (render-phase writes are side effects and are
+ * unsafe under concurrent rendering).
+ */
+function useLatestRef<T>(value: T) {
+  const ref = useRef(value);
+  useEffect(() => {
+    ref.current = value;
+  }, [value]);
+  return ref;
 }
 
 export function TypstEditorScreen() {
@@ -96,58 +128,28 @@ export function TypstEditorScreen() {
   const [status, setStatus] = useState<Status>({ kind: "loading" });
   const [lastCompileMs, setLastCompileMs] = useState<number | null>(null);
   const [autoCompile, setAutoCompile] = useState(true);
-  const [zoom, setZoom] = useState(1);
   const [notice, setNotice] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
-
-  const [syncEnabled, setSyncEnabled] = useState(true);
-  const [previewMode, setPreviewMode] = useState<PreviewMode>("svg");
-  const [band, setBand] = useState<Band | null>(null);
-  const [pageCount, setPageCount] = useState(1);
-  const [currentPage, setCurrentPage] = useState(1);
 
   const [wsFileName, setWsFileName] = useState<string | null>(null);
   const wsRef = useRef<WsFileRef | null>(null);
   const savedSourceRef = useRef<string>("");
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ── Scroll-sync + selectable-preview plumbing ─────────────────────────────
+  // ── Jump-to-source plumbing ───────────────────────────────────────────────
   const editorViewRef = useRef<EditorView | null>(null);
-  const [editorReady, setEditorReady] = useState(false);
-  const previewScrollRef = useRef<HTMLDivElement | null>(null);
-  const domContainerRef = useRef<HTMLDivElement | null>(null);
-  const domHandleRef = useRef<DomHandle | null>(null);
-  const sectionsRef = useRef<Section[]>([]);
-  const syncingRef = useRef(false);
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const syncEnabledRef = useRef(syncEnabled);
-  syncEnabledRef.current = syncEnabled;
+  /** Written by the preview pane so the export menu can read it without state. */
+  const currentPageRef = useRef(1);
 
-  // Rebuild the section map whenever the source changes.
-  useEffect(() => {
-    sectionsRef.current = buildSections(source);
-  }, [source]);
+  const sourceRef = useLatestRef(source);
 
-  // Page count follows the compiled document.
-  useEffect(() => {
-    setPageCount(svg ? Math.max(1, countPages(svg)) : 1);
-  }, [svg]);
+  const pageCount = useMemo(
+    () => (svg ? Math.max(1, countPages(svg)) : 1),
+    [svg],
+  );
 
-  // Run a scroll write without it bouncing back through the paired listener.
-  const withSyncGuard = useCallback((fn: () => void) => {
-    if (syncingRef.current) return;
-    syncingRef.current = true;
-    fn();
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => {
-        syncingRef.current = false;
-      }),
-    );
-  }, []);
-
-  const stale =
-    status.kind === "ready" && !!svg && source !== compiledSource;
+  const stale = status.kind === "ready" && !!svg && source !== compiledSource;
 
   const flashNotice = useCallback((msg: string) => {
     setNotice(msg);
@@ -155,37 +157,77 @@ export function TypstEditorScreen() {
     noticeTimer.current = setTimeout(() => setNotice(null), 1800);
   }, []);
 
-  // Persist to localStorage.
-  useEffect(() => {
+  // ── Persistence ───────────────────────────────────────────────────────────
+  const persistSource = useCallback((src: string) => {
     try {
-      localStorage.setItem(STORAGE_KEY, source);
+      localStorage.setItem(STORAGE_KEY, src);
     } catch {
       /* ignore quota / private-mode errors */
     }
-  }, [source]);
+  }, []);
+
+  // Debounced: writing the whole document synchronously on every keystroke is
+  // one of the most expensive things this screen used to do.
+  useEffect(() => {
+    const t = setTimeout(
+      () => persistSource(sourceRef.current),
+      STORAGE_DEBOUNCE_MS,
+    );
+    return () => clearTimeout(t);
+  }, [source, persistSource, sourceRef]);
+
+  // …so nothing is lost, flush on the way out.
+  useEffect(() => {
+    const flush = () => persistSource(sourceRef.current);
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("beforeunload", flush);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("beforeunload", flush);
+      flush();
+    };
+  }, [persistSource, sourceRef]);
+
+  // ── Compile ───────────────────────────────────────────────────────────────
+  /** Monotonic id so a slow compile can never overwrite a newer result. */
+  const compileIdRef = useRef(0);
+  const aliveRef = useRef(true);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
+
+  /** Last source handed to the compiler — auto-compile never retries it. */
+  const attemptedSourceRef = useRef<string | null>(null);
 
   const runCompile = useCallback(async (src: string) => {
+    const id = ++compileIdRef.current;
+    attemptedSourceRef.current = src;
     setStatus({ kind: "compiling" });
     const started = performance.now();
     try {
-      const { svg } = await compileSvg(src);
-      setSvg(svg);
+      const result = await compileSvgLatest(src);
+      // A newer request took over (or we're gone): it owns the UI now.
+      if (result.kind === "superseded") return;
+      if (!aliveRef.current || id !== compileIdRef.current) return;
+      setSvg(result.svg);
       setCompiledSource(src);
       setLastCompileMs(Math.round(performance.now() - started));
       setStatus({ kind: "ready" });
     } catch (err) {
+      if (!aliveRef.current || id !== compileIdRef.current) return;
       setStatus({
         kind: "error",
         message: err instanceof Error ? err.message : String(err),
       });
     }
   }, []);
-
-  // Keep the latest handlers reachable from the (stable) CodeMirror keymap.
-  const runCompileRef = useRef(runCompile);
-  runCompileRef.current = runCompile;
-  const sourceRef = useRef(source);
-  sourceRef.current = source;
+  const runCompileRef = useLatestRef(runCompile);
 
   // Preload the compiler on mount, then first compile.
   useEffect(() => {
@@ -209,22 +251,48 @@ export function TypstEditorScreen() {
     return () => {
       cancelled = true;
     };
-  }, [runCompile]);
+  }, [runCompile, sourceRef]);
+
+  // When the last edit happened, so a compile finishing mid-typing re-arms the
+  // debounce for the time *remaining* instead of restarting it from scratch.
+  const lastEditAtRef = useRef(0);
+  useEffect(() => {
+    lastEditAtRef.current = performance.now();
+  }, [source]);
 
   // Debounced auto-compile on edits.
   useEffect(() => {
     if (!autoCompile) return;
     if (status.kind === "loading") return;
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      void runCompile(source);
-    }, COMPILE_DEBOUNCE_MS);
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-    // Intentionally keyed on source/autoCompile; runCompile is stable.
-  }, [source, autoCompile]); // eslint-disable-line
+    if (source === compiledSource) {
+      // The preview already shows exactly this source, so a compile error left
+      // over from an edit that has since been undone is stale — drop it.
+      if (status.kind === "error" && attemptedSourceRef.current !== source) {
+        attemptedSourceRef.current = source;
+        setStatus({ kind: "ready" });
+      }
+      return;
+    }
+    // Never retry a source we already handed to the compiler: otherwise a
+    // document that fails to compile is recompiled every time `status` flips.
+    if (attemptedSourceRef.current === source) return;
+    const elapsed = performance.now() - lastEditAtRef.current;
+    const delay = Math.max(0, compileDebounceMs(lastCompileMs) - elapsed);
+    const t = setTimeout(() => {
+      void runCompileRef.current(sourceRef.current);
+    }, delay);
+    return () => clearTimeout(t);
+  }, [
+    source,
+    compiledSource,
+    autoCompile,
+    status.kind,
+    lastCompileMs,
+    runCompileRef,
+    sourceRef,
+  ]);
 
+  // ── Exports ───────────────────────────────────────────────────────────────
   const downloadPdf = useCallback(async () => {
     setDownloading(true);
     try {
@@ -241,16 +309,11 @@ export function TypstEditorScreen() {
     } finally {
       setDownloading(false);
     }
-  }, []);
-  const downloadPdfRef = useRef(downloadPdf);
-  downloadPdfRef.current = downloadPdf;
+  }, [sourceRef]);
 
   const downloadSvg = useCallback(() => {
     if (!svg) return;
-    downloadBlob(
-      new Blob([svg], { type: "image/svg+xml" }),
-      "document.svg",
-    );
+    downloadBlob(new Blob([svg], { type: "image/svg+xml" }), "document.svg");
   }, [svg]);
 
   const downloadPng = useCallback(async () => {
@@ -270,7 +333,7 @@ export function TypstEditorScreen() {
     } catch {
       flashNotice("Copy failed");
     }
-  }, [flashNotice]);
+  }, [flashNotice, sourceRef]);
 
   const copyShareLink = useCallback(async () => {
     const hash = sourceToHash(sourceRef.current);
@@ -286,13 +349,26 @@ export function TypstEditorScreen() {
     } catch {
       flashNotice("Link is in the address bar");
     }
-  }, [flashNotice]);
+  }, [flashNotice, sourceRef]);
 
-  const zoomBy = useCallback((factor: number) => {
-    setZoom((z) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z * factor)));
-  }, []);
+  // Download whichever page is currently in view (read from the preview pane's
+  // ref, so page changes don't rerender this screen).
+  const downloadCurrentPageSvg = useCallback(() => {
+    if (!svg) return;
+    const pages = splitSvgPages(svg);
+    const n = clamp(currentPageRef.current, 1, pages.length);
+    const page = pages[n - 1];
+    if (!page) {
+      flashNotice("No page to export");
+      return;
+    }
+    downloadBlob(
+      new Blob([page.svg], { type: "image/svg+xml" }),
+      `document-page-${n}.svg`,
+    );
+  }, [svg, flashNotice]);
 
-  // ── Workspace: open a .typ handed off from the sidebar; save writes source back ─
+  // ── Workspace: open a .typ handed off from the sidebar; save writes back ───
   const saveToWorkspace = useCallback(async (): Promise<boolean> => {
     if (!wsRef.current) return false;
     try {
@@ -303,7 +379,7 @@ export function TypstEditorScreen() {
       flashNotice(`Save failed: ${(e as Error).message}`);
     }
     return true;
-  }, [flashNotice, wsFileName]);
+  }, [flashNotice, wsFileName, sourceRef]);
 
   usePendingFileOpen("typst", async ({ ref, name, file }) => {
     const text = await file.text();
@@ -323,11 +399,11 @@ export function TypstEditorScreen() {
   });
 
   // Ctrl/Cmd-S saves back to the workspace file when one is open, else exports PDF.
-  const saveActionRef = useRef<() => void>(() => {});
-  saveActionRef.current = () => {
+  const saveAction = useCallback(() => {
     if (wsRef.current) void saveToWorkspace();
-    else void downloadPdfRef.current();
-  };
+    else void downloadPdf();
+  }, [saveToWorkspace, downloadPdf]);
+  const saveActionRef = useLatestRef(saveAction);
 
   // CodeMirror extensions (stable): Typst mode, Quebi Light theme, our shortcuts.
   const extensions = useMemo(
@@ -354,321 +430,59 @@ export function TypstEditorScreen() {
         },
       ]),
     ],
-    [],
+    [runCompileRef, saveActionRef, sourceRef],
   );
 
-  // Update the highlighted section band from the editor's cursor position.
-  const updateBandFromCursor = useCallback((view: EditorView) => {
-    const sections = sectionsRef.current;
-    if (sections.length === 0) {
-      setBand(null);
-      return;
-    }
-    const docLen = Math.max(1, view.state.doc.length);
-    const offset = view.state.selection.main.head;
-    const idx = sectionIndexForOffset(sections, offset);
-    const { top, bottom } = sectionBand(sections[idx], docLen);
-    setBand({ top, height: Math.max(0.015, bottom - top) });
-  }, []);
-
-  // CodeMirror update handler: keep the band in sync, and on pure cursor
-  // navigation (selection changed but not the doc) scroll the preview to match.
-  const onEditorUpdate = useCallback(
-    (vu: { view: EditorView; docChanged: boolean; selectionSet: boolean }) => {
-      if (!vu.selectionSet && !vu.docChanged) return;
-      updateBandFromCursor(vu.view);
-      if (vu.selectionSet && !vu.docChanged && syncEnabledRef.current) {
-        const prev = previewScrollRef.current;
-        if (prev) {
-          const docLen = Math.max(1, vu.view.state.doc.length);
-          const frac = offsetToFraction(
-            vu.view.state.selection.main.head,
-            docLen,
-          );
-          withSyncGuard(() => setScrollFraction(prev, frac));
-        }
-      }
-    },
-    [updateBandFromCursor, withSyncGuard],
-  );
-
-  // Bidirectional viewport scroll sync between the editor and the preview.
-  useEffect(() => {
-    const view = editorViewRef.current;
-    const preview = previewScrollRef.current;
-    if (!view || !preview) return;
-    const editorScroll = view.scrollDOM;
-    const onEditorScroll = () => {
-      if (!syncEnabledRef.current) return;
-      withSyncGuard(() =>
-        setScrollFraction(preview, scrollFraction(editorScroll)),
+  /**
+   * Reveal + transiently highlight the source section at `fraction` of the
+   * document. The section map is resolved lazily here (cached on the source
+   * string) rather than rebuilt on every keystroke.
+   */
+  const revealSourceAtFraction = useCallback(
+    (fraction: number) => {
+      const view = editorViewRef.current;
+      if (!view) return;
+      const sections = sectionsForSource(sourceRef.current);
+      if (sections.length === 0) return;
+      const docLen = Math.max(1, view.state.doc.length);
+      const idx = sectionIndexForOffset(
+        sections,
+        fractionToOffset(fraction, docLen),
       );
-    };
-    const onPreviewScroll = () => {
-      if (!syncEnabledRef.current) return;
-      withSyncGuard(() =>
-        setScrollFraction(editorScroll, scrollFraction(preview)),
+      const section = sections[idx];
+      const line = view.state.doc.lineAt(
+        Math.min(section.start, view.state.doc.length),
       );
-    };
-    editorScroll.addEventListener("scroll", onEditorScroll, { passive: true });
-    preview.addEventListener("scroll", onPreviewScroll, { passive: true });
-    return () => {
-      editorScroll.removeEventListener("scroll", onEditorScroll);
-      preview.removeEventListener("scroll", onPreviewScroll);
-    };
-    // Re-attach when the editor becomes ready or the preview surface swaps.
-  }, [editorReady, previewMode, status.kind, withSyncGuard]);
-
-  // Selectable-text (DOM render) mode: mount/refresh after each compile, with a
-  // hard fallback to the SVG preview if the experimental renderer throws.
-  useEffect(() => {
-    if (previewMode !== "text") {
-      domHandleRef.current?.dispose();
-      domHandleRef.current = null;
-      return;
-    }
-    if (status.kind !== "ready") return;
-    const container = domContainerRef.current;
-    if (!container) return;
-    let disposed = false;
-    (async () => {
-      try {
-        domHandleRef.current?.dispose();
-        domHandleRef.current = null;
-        const handle = await renderDomInto(container, compiledSource || source);
-        if (disposed) {
-          handle.dispose();
-          return;
-        }
-        domHandleRef.current = handle;
-      } catch {
-        if (!disposed) {
-          flashNotice("Selectable preview unavailable — using image");
-          setPreviewMode("svg");
-        }
-      }
-    })();
-    return () => {
-      disposed = true;
-    };
-    // compiledSource changes once per successful compile.
-  }, [previewMode, status.kind, compiledSource, source, flashNotice]);
-
-  // Tear the DOM mount down on unmount.
-  useEffect(() => {
-    return () => {
-      domHandleRef.current?.dispose();
-      domHandleRef.current = null;
-    };
-  }, []);
-
-  // Reveal + transiently highlight the section of the source at a given
-  // fraction of the document, and show the matching band in the preview.
-  const revealSourceAtFraction = useCallback((fraction: number) => {
-    const view = editorViewRef.current;
-    if (!view) return;
-    const sections = sectionsRef.current;
-    if (sections.length === 0) return;
-    const docLen = Math.max(1, view.state.doc.length);
-    const idx = sectionIndexForOffset(
-      sections,
-      fractionToOffset(fraction, docLen),
-    );
-    const section = sections[idx];
-    const line = view.state.doc.lineAt(Math.min(section.start, docLen));
-    view.dispatch({
-      effects: [
-        EditorView.scrollIntoView(line.from, { y: "center" }),
-        setSyncLine.of(line.from),
-      ],
-    });
-    const { top, bottom } = sectionBand(section, docLen);
-    setBand({ top, height: Math.max(0.015, bottom - top) });
-    if (highlightTimer.current) clearTimeout(highlightTimer.current);
-    highlightTimer.current = setTimeout(() => {
-      editorViewRef.current?.dispatch({ effects: setSyncLine.of(null) });
-    }, 1600);
-  }, []);
-
-  // Compute a [0,1] fraction of the whole document for a target inside the
-  // preview, from typst's page list (each `.typst-page` carries its height).
-  const pageTargetToFraction = useCallback(
-    (container: HTMLElement, page: number, y: number): number => {
-      const pages = Array.from(
-        container.querySelectorAll<HTMLElement>(".typst-page"),
-      );
-      let total = 0;
-      let before = 0;
-      pages.forEach((p, i) => {
-        const h = parseFloat(p.getAttribute("data-page-height") || "0");
-        if (i < page - 1) before += h;
-        total += h;
+      view.dispatch({
+        effects: [
+          EditorView.scrollIntoView(line.from, { y: "center" }),
+          setSyncLine.of(line.from),
+        ],
       });
-      return total > 0 ? Math.max(0, Math.min(1, (before + y) / total)) : 0;
+      if (highlightTimer.current) clearTimeout(highlightTimer.current);
+      highlightTimer.current = setTimeout(() => {
+        highlightTimer.current = null;
+        // The view may have been destroyed in the meantime.
+        try {
+          editorViewRef.current?.dispatch({ effects: setSyncLine.of(null) });
+        } catch {
+          /* view is gone — nothing to clear */
+        }
+      }, HIGHLIGHT_MS);
     },
-    [],
+    [sourceRef],
   );
 
-  // Scroll the preview to an in-document location (1-based page + y in pt), and
-  // follow in the editor when sync is on.
-  const jumpToDocLocation = useCallback(
-    (page: number, y: number) => {
-      const container = previewScrollRef.current;
-      if (!container) return;
-      const pages = container.querySelectorAll<HTMLElement>(".typst-page");
-      const pageEl = pages[page - 1];
-      if (pageEl) {
-        const pageHeightPt = parseFloat(
-          pageEl.getAttribute("data-page-height") || "0",
-        );
-        const pageRect = pageEl.getBoundingClientRect();
-        const cRect = container.getBoundingClientRect();
-        const scale = pageHeightPt > 0 ? pageRect.height / pageHeightPt : 1;
-        const targetTop =
-          pageRect.top - cRect.top + container.scrollTop + y * scale;
-        withSyncGuard(() =>
-          container.scrollTo({
-            top: Math.max(0, targetTop - container.clientHeight * 0.25),
-            behavior: "smooth",
-          }),
-        );
-      }
-      if (syncEnabledRef.current) {
-        revealSourceAtFraction(pageTargetToFraction(container, page, y));
-      }
-    },
-    [revealSourceAtFraction, pageTargetToFraction, withSyncGuard],
-  );
-
-  // Wire typst's internal reference links. The SVG emits, per cross-reference,
-  // `<a onclick="handleTypstLocation(this, page, x, y); return false">`. We
-  // (1) provide the global it calls, and (2) also intercept clicks directly by
-  // parsing that attribute — belt-and-braces, since inline handlers injected via
-  // innerHTML don't always fire for SVG anchors.
+  // Timers outlive the component unless we say otherwise.
   useEffect(() => {
-    const win = window as unknown as Record<string, unknown>;
-    win.handleTypstLocation = (
-      _elem: unknown,
-      page: number,
-      _x: number,
-      y: number,
-    ) => jumpToDocLocation(page, y);
-
-    const container = previewScrollRef.current;
-    const CALL_RE =
-      /handleTypstLocation\(\s*this\s*,\s*([\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*\)/;
-    const onClick = (e: MouseEvent) => {
-      const target = e.target as Element | null;
-      const anchor = target?.closest?.("a");
-      const onclick = anchor?.getAttribute("onclick");
-      if (!onclick) return;
-      const m = CALL_RE.exec(onclick);
-      if (!m) return;
-      e.preventDefault();
-      jumpToDocLocation(Number(m[1]), Number(m[3]));
-    };
-    container?.addEventListener("click", onClick);
     return () => {
-      container?.removeEventListener("click", onClick);
-      if (win.handleTypstLocation) delete win.handleTypstLocation;
+      if (highlightTimer.current) clearTimeout(highlightTimer.current);
+      if (noticeTimer.current) clearTimeout(noticeTimer.current);
+      highlightTimer.current = null;
+      noticeTimer.current = null;
+      editorViewRef.current = null;
     };
-  }, [jumpToDocLocation, previewMode, status.kind]);
-
-  // Preview text selection → reveal the corresponding section in the editor.
-  useEffect(() => {
-    const container = previewScrollRef.current;
-    if (!container) return;
-    const onPointerUp = () => {
-      if (!syncEnabledRef.current) return;
-      const sel = window.getSelection();
-      if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
-      const range = sel.getRangeAt(0);
-      if (!container.contains(range.commonAncestorContainer)) return;
-      const rect = range.getBoundingClientRect();
-      if (!rect || (rect.top === 0 && rect.height === 0)) return;
-      const cRect = container.getBoundingClientRect();
-      const yInContainer = rect.top - cRect.top + container.scrollTop;
-      const fraction =
-        container.scrollHeight > 0 ? yInContainer / container.scrollHeight : 0;
-      revealSourceAtFraction(fraction);
-    };
-    container.addEventListener("pointerup", onPointerUp);
-    return () => container.removeEventListener("pointerup", onPointerUp);
-  }, [previewMode, status.kind, revealSourceAtFraction]);
-
-  // Scroll the preview so page `n` (1-based) sits at the top.
-  const scrollToPage = useCallback((n: number) => {
-    const container = previewScrollRef.current;
-    if (!container) return;
-    const pages = container.querySelectorAll<HTMLElement>(".typst-page");
-    const pageEl = pages[Math.max(0, Math.min(pages.length - 1, n - 1))];
-    if (!pageEl) return;
-    const cRect = container.getBoundingClientRect();
-    const pRect = pageEl.getBoundingClientRect();
-    container.scrollTo({
-      top: Math.max(0, pRect.top - cRect.top + container.scrollTop - 8),
-      behavior: "smooth",
-    });
   }, []);
-
-  // Track the current page from the scroll position.
-  useEffect(() => {
-    const container = previewScrollRef.current;
-    if (!container) return;
-    let raf = 0;
-    const update = () => {
-      raf = 0;
-      const pages = container.querySelectorAll<HTMLElement>(".typst-page");
-      if (pages.length === 0) return;
-      const mid = container.getBoundingClientRect().top + container.clientHeight / 2;
-      let cur = 1;
-      pages.forEach((p, i) => {
-        if (p.getBoundingClientRect().top <= mid) cur = i + 1;
-      });
-      setCurrentPage(cur);
-    };
-    const onScroll = () => {
-      if (!raf) raf = requestAnimationFrame(update);
-    };
-    container.addEventListener("scroll", onScroll, { passive: true });
-    update();
-    return () => {
-      container.removeEventListener("scroll", onScroll);
-      if (raf) cancelAnimationFrame(raf);
-    };
-  }, [previewMode, status.kind, svg]);
-
-  // Fit a whole page in the preview viewport (zoom = fraction of preview width).
-  const fitPage = useCallback(() => {
-    const container = previewScrollRef.current;
-    const pageEl = container?.querySelector<HTMLElement>(".typst-page");
-    if (!container || !pageEl) return;
-    const pw = parseFloat(pageEl.getAttribute("data-page-width") || "0");
-    const ph = parseFloat(pageEl.getAttribute("data-page-height") || "0");
-    if (pw <= 0 || ph <= 0) return;
-    const pad = 32; // p-4 → 1rem each side
-    const availW = container.clientWidth - pad;
-    const availH = container.clientHeight - pad;
-    if (availW <= 0 || availH <= 0) return;
-    // Page height at zoom z is z·availW·(ph/pw); solve for it to equal availH.
-    const z = (availH * pw) / (availW * ph);
-    setZoom(Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z)));
-  }, []);
-
-  // Download the current page as a standalone SVG.
-  const downloadCurrentPageSvg = useCallback(() => {
-    if (!svg) return;
-    const pages = splitSvgPages(svg);
-    const page = pages[Math.max(0, Math.min(pages.length - 1, currentPage - 1))];
-    if (!page) {
-      flashNotice("No page to export");
-      return;
-    }
-    downloadBlob(
-      new Blob([page.svg], { type: "image/svg+xml" }),
-      `document-page-${currentPage}.svg`,
-    );
-  }, [svg, currentPage, flashNotice]);
 
   const busy = status.kind === "loading" || status.kind === "compiling";
 
@@ -735,7 +549,7 @@ export function TypstEditorScreen() {
               </MenuItem>
               {pageCount > 1 && (
                 <MenuItem onClick={downloadCurrentPageSvg} disabled={!svg}>
-                  Download page {currentPage} (SVG)
+                  Download current page (SVG)
                 </MenuItem>
               )}
               <MenuItem onClick={() => void downloadPng()} disabled={!svg}>
@@ -763,9 +577,7 @@ export function TypstEditorScreen() {
             style={{ height: "100%", fontSize: "13px" }}
             onCreateEditor={(view) => {
               editorViewRef.current = view;
-              setEditorReady(true);
             }}
-            onUpdate={onEditorUpdate}
             basicSetup={{
               lineNumbers: true,
               highlightActiveLine: true,
@@ -776,164 +588,414 @@ export function TypstEditorScreen() {
           />
         </div>
 
-        {/* Preview */}
-        <div className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border">
-          {/* Preview toolbar: zoom + fit */}
-          <div className="flex items-center gap-1 border-b border-border bg-card px-2 py-1 text-sm">
-            <button
-              type="button"
-              onClick={() => zoomBy(0.8)}
-              className="rounded p-1 text-muted transition hover:text-accent"
-              aria-label="Zoom out"
-            >
-              <ZoomOut size={16} />
-            </button>
-            <span className="w-12 text-center tabular-nums text-muted">
-              {Math.round(zoom * 100)}%
-            </span>
-            <button
-              type="button"
-              onClick={() => zoomBy(1.25)}
-              className="rounded p-1 text-muted transition hover:text-accent"
-              aria-label="Zoom in"
-            >
-              <ZoomIn size={16} />
-            </button>
-            <button
-              type="button"
-              onClick={() => setZoom(1)}
-              className="ml-1 inline-flex items-center gap-1 rounded px-1.5 py-1 text-xs text-muted transition hover:text-accent"
-            >
-              <Maximize2 size={13} /> Fit width
-            </button>
-            <button
-              type="button"
-              onClick={fitPage}
-              className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-xs text-muted transition hover:text-accent"
-            >
-              <StretchVertical size={13} /> Fit page
-            </button>
-
-            {/* Page navigation (multi-page docs). */}
-            {pageCount > 1 && (
-              <div className="ml-2 flex items-center gap-0.5 text-xs text-muted">
-                <button
-                  type="button"
-                  onClick={() => scrollToPage(currentPage - 1)}
-                  disabled={currentPage <= 1}
-                  className="rounded p-1 transition hover:text-accent disabled:opacity-40"
-                  aria-label="Previous page"
-                >
-                  <ChevronLeft size={15} />
-                </button>
-                <span className="tabular-nums">
-                  {currentPage} / {pageCount}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => scrollToPage(currentPage + 1)}
-                  disabled={currentPage >= pageCount}
-                  className="rounded p-1 transition hover:text-accent disabled:opacity-40"
-                  aria-label="Next page"
-                >
-                  <ChevronRight size={15} />
-                </button>
-              </div>
-            )}
-
-            <div className="ml-auto flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => setSyncEnabled((v) => !v)}
-                aria-pressed={syncEnabled}
-                title="Sync scrolling between editor and preview"
-                className={`inline-flex items-center gap-1 rounded px-1.5 py-1 text-xs transition ${
-                  syncEnabled ? "text-accent" : "text-muted hover:text-accent"
-                }`}
-              >
-                <Link2 size={13} /> Sync
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  setPreviewMode((m) => (m === "svg" ? "text" : "svg"))
-                }
-                aria-pressed={previewMode === "text"}
-                title="Selectable/copyable text (beta)"
-                className={`inline-flex items-center gap-1 rounded px-1.5 py-1 text-xs transition ${
-                  previewMode === "text"
-                    ? "text-accent"
-                    : "text-muted hover:text-accent"
-                }`}
-              >
-                <Type size={13} /> Selectable
-              </button>
-            </div>
-          </div>
-
-          {status.kind === "error" && (
-            <div className="flex items-start gap-2 border-b border-red-600/30 bg-red-500/10 px-3 py-2 text-sm text-red-600">
-              <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden />
-              <pre className="min-w-0 whitespace-pre-wrap break-words font-mono text-xs">
-                {status.message}
-              </pre>
-            </div>
-          )}
-
-          <div
-            ref={previewScrollRef}
-            className="min-h-0 flex-1 overflow-auto bg-bg p-4"
-          >
-            {status.kind === "loading" ? (
-              <div className="flex h-full items-center justify-center gap-2 text-muted">
-                <Loader2 size={18} className="animate-spin" aria-hidden />
-                Loading the Typst compiler…
-              </div>
-            ) : (
-              <div
-                className="relative mx-auto"
-                style={{ width: `${zoom * 100}%` }}
-              >
-                {/* Section highlight band (proportional to source position). */}
-                {syncEnabled && band && (
-                  <div
-                    aria-hidden="true"
-                    className="pointer-events-none absolute inset-x-0 z-10 rounded bg-accent/10 ring-1 ring-accent/40 transition-all"
-                    style={{
-                      top: `${band.top * 100}%`,
-                      height: `${band.height * 100}%`,
-                    }}
-                  />
-                )}
-                {/* Selectable text (DOM render mode). Hidden in svg mode. */}
-                <div
-                  ref={domContainerRef}
-                  className={`[&_svg]:h-auto [&_svg]:w-full [&_svg]:bg-white [&_svg]:shadow-lg ${
-                    previewMode === "text" ? "" : "hidden"
-                  }`}
-                />
-                {/* Image (SVG string) preview. */}
-                {previewMode === "svg" &&
-                  (svg ? (
-                    <div
-                      className="[&_svg]:h-auto [&_svg]:w-full [&_svg]:bg-white [&_svg]:shadow-lg"
-                      // Produced by our own local WASM compiler from the user's
-                      // own input — no external/untrusted HTML.
-                      dangerouslySetInnerHTML={{ __html: svg }}
-                    />
-                  ) : (
-                    <div className="py-16 text-center text-muted">
-                      No preview yet.
-                    </div>
-                  ))}
-              </div>
-            )}
-          </div>
-        </div>
+        <PreviewPane
+          svg={svg}
+          statusKind={status.kind}
+          errorMessage={status.kind === "error" ? status.message : null}
+          compiledSource={compiledSource}
+          pageCount={pageCount}
+          currentPageRef={currentPageRef}
+          onRevealSource={revealSourceAtFraction}
+          onNotice={flashNotice}
+        />
       </div>
     </section>
   );
 }
+
+interface PreviewPaneProps {
+  svg: string;
+  statusKind: Status["kind"];
+  errorMessage: string | null;
+  compiledSource: string;
+  pageCount: number;
+  currentPageRef: React.RefObject<number>;
+  /** Jump the editor to the source at this fraction [0, 1] of the document. */
+  onRevealSource: (fraction: number) => void;
+  onNotice: (message: string) => void;
+}
+
+/**
+ * The preview half of the screen.
+ *
+ * Split out (and memoised) so that editor-side state — above all the `source`
+ * that changes on every keystroke — can't rerender the multi-megabyte rendered
+ * document. Everything that only the preview cares about (zoom, render mode,
+ * current page, the jump toggle) is state *here*, so it can't rerender the
+ * editor either. All props are per-compile values or stable callbacks.
+ */
+const PreviewPane = memo(function PreviewPane({
+  svg,
+  statusKind,
+  errorMessage,
+  compiledSource,
+  pageCount,
+  currentPageRef,
+  onRevealSource,
+  onNotice,
+}: PreviewPaneProps) {
+  const [zoom, setZoom] = useState(1);
+  const [previewMode, setPreviewMode] = useState<PreviewMode>("svg");
+  const [currentPage, setCurrentPage] = useState(1);
+  /** Gates the preview → source jump affordances (click a link, select text). */
+  const [jumpEnabled, setJumpEnabled] = useState(true);
+  const jumpEnabledRef = useLatestRef(jumpEnabled);
+
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const domContainerRef = useRef<HTMLDivElement | null>(null);
+  const domHandleRef = useRef<DomHandle | null>(null);
+
+  const zoomBy = useCallback((factor: number) => {
+    setZoom((z) => clamp(z * factor, ZOOM_MIN, ZOOM_MAX));
+  }, []);
+
+  /** Reveal the source for a rendered-document point (page + y). */
+  const revealPageTarget = useCallback(
+    (container: HTMLElement, target: PageTarget) => {
+      const heights = pageHeights(pageElements(container));
+      if (heights.some((h) => h > 0)) {
+        onRevealSource(pageTargetToFraction(heights, target));
+      }
+    },
+    [onRevealSource],
+  );
+
+  // Scroll the preview to an in-document location (1-based page + y in pt) and
+  // follow in the editor. Used by typst's internal reference links.
+  const jumpToDocLocation = useCallback(
+    (page: number, y: number) => {
+      const container = scrollRef.current;
+      if (!container) return;
+      const pages = pageElements(container);
+      const pageEl = pages[page - 1];
+      if (pageEl) {
+        const pageHeightPt = pageHeightOf(pageEl);
+        const pageRect = pageEl.getBoundingClientRect();
+        const cRect = container.getBoundingClientRect();
+        const scale = pageHeightPt > 0 ? pageRect.height / pageHeightPt : 1;
+        const targetTop =
+          pageRect.top - cRect.top + container.scrollTop + y * scale;
+        container.scrollTo({
+          top: Math.max(0, targetTop - container.clientHeight * 0.25),
+          behavior: "smooth",
+        });
+      }
+      if (jumpEnabledRef.current) revealPageTarget(container, { page, y });
+    },
+    [revealPageTarget, jumpEnabledRef],
+  );
+
+  // Wire typst's internal reference links. The SVG emits, per cross-reference,
+  // `<a onclick="handleTypstLocation(this, page, x, y); return false">`. We
+  // (1) provide the global it calls, and (2) also intercept clicks directly by
+  // parsing that attribute — belt-and-braces, since inline handlers injected via
+  // innerHTML don't always fire for SVG anchors.
+  useEffect(() => {
+    const win = window as unknown as Record<string, unknown>;
+    win.handleTypstLocation = (
+      _elem: unknown,
+      page: number,
+      _x: number,
+      y: number,
+    ) => jumpToDocLocation(page, y);
+
+    const container = scrollRef.current;
+    const CALL_RE =
+      /handleTypstLocation\(\s*this\s*,\s*([\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*\)/;
+    const onClick = (e: MouseEvent) => {
+      const target = e.target as Element | null;
+      const anchor = target?.closest?.("a");
+      const onclick = anchor?.getAttribute("onclick");
+      if (!onclick) return;
+      const m = CALL_RE.exec(onclick);
+      if (!m) return;
+      e.preventDefault();
+      jumpToDocLocation(Number(m[1]), Number(m[3]));
+    };
+    container?.addEventListener("click", onClick);
+    return () => {
+      container?.removeEventListener("click", onClick);
+      if (win.handleTypstLocation) delete win.handleTypstLocation;
+    };
+  }, [jumpToDocLocation, previewMode, statusKind]);
+
+  // Preview text selection → reveal the corresponding section in the editor.
+  // Goes through the same page/pt basis as a reference-link jump, so selecting
+  // text next to a link lands in the same place clicking it would.
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+    const onPointerUp = () => {
+      if (!jumpEnabledRef.current) return;
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
+      const range = sel.getRangeAt(0);
+      if (!container.contains(range.commonAncestorContainer)) return;
+      const rect = range.getBoundingClientRect();
+      if (!rect || (rect.top === 0 && rect.height === 0)) return;
+      const target = clientYToPageTarget(pageElements(container), rect.top);
+      if (target) revealPageTarget(container, target);
+      // No page reports a usable size (some renderer outputs don't): fall back
+      // to the scroll-content basis rather than dropping the gesture.
+      else onRevealSource(containerYToFraction(container, rect.top));
+    };
+    container.addEventListener("pointerup", onPointerUp);
+    return () => container.removeEventListener("pointerup", onPointerUp);
+  }, [previewMode, statusKind, revealPageTarget, onRevealSource, jumpEnabledRef]);
+
+  // Selectable-text (DOM render) mode: mount/refresh after each compile, with a
+  // hard fallback to the SVG preview if the experimental renderer throws.
+  // Deliberately keyed on `compiledSource`, never on the in-flight source.
+  useEffect(() => {
+    if (previewMode !== "text") {
+      domHandleRef.current?.dispose();
+      domHandleRef.current = null;
+      return;
+    }
+    if (statusKind !== "ready") return;
+    const container = domContainerRef.current;
+    if (!container) return;
+    let disposed = false;
+    (async () => {
+      try {
+        domHandleRef.current?.dispose();
+        domHandleRef.current = null;
+        const handle = await renderDomInto(container, compiledSource);
+        if (disposed) {
+          handle.dispose();
+          return;
+        }
+        domHandleRef.current = handle;
+      } catch {
+        if (!disposed) {
+          onNotice("Selectable preview unavailable — using image");
+          setPreviewMode("svg");
+        }
+      }
+    })();
+    return () => {
+      disposed = true;
+    };
+  }, [previewMode, statusKind, compiledSource, onNotice]);
+
+  // Tear the DOM mount down on unmount.
+  useEffect(() => {
+    return () => {
+      domHandleRef.current?.dispose();
+      domHandleRef.current = null;
+    };
+  }, []);
+
+  // Scroll the preview so page `n` (1-based) sits at the top.
+  const scrollToPage = useCallback((n: number) => {
+    const container = scrollRef.current;
+    if (!container) return;
+    const pages = pageElements(container);
+    const pageEl = pages[clamp(n, 1, pages.length) - 1];
+    if (!pageEl) return;
+    const cRect = container.getBoundingClientRect();
+    const pRect = pageEl.getBoundingClientRect();
+    container.scrollTo({
+      top: Math.max(0, pRect.top - cRect.top + container.scrollTop - 8),
+      behavior: "smooth",
+    });
+  }, []);
+
+  // Track the current page from the scroll position (rAF-throttled).
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+    let raf = 0;
+    const update = () => {
+      raf = 0;
+      const pages = pageElements(container);
+      if (pages.length === 0) return;
+      const mid =
+        container.getBoundingClientRect().top + container.clientHeight / 2;
+      let cur = 1;
+      pages.forEach((p, i) => {
+        if (p.getBoundingClientRect().top <= mid) cur = i + 1;
+      });
+      currentPageRef.current = cur;
+      setCurrentPage((prev) => (prev === cur ? prev : cur));
+    };
+    const onScroll = () => {
+      if (!raf) raf = requestAnimationFrame(update);
+    };
+    container.addEventListener("scroll", onScroll, { passive: true });
+    update();
+    return () => {
+      container.removeEventListener("scroll", onScroll);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [previewMode, statusKind, svg, currentPageRef]);
+
+  // Fit a whole page in the preview viewport (zoom = fraction of preview width).
+  const fitPage = useCallback(() => {
+    const container = scrollRef.current;
+    const pageEl = container?.querySelector<HTMLElement>(".typst-page");
+    if (!container || !pageEl) return;
+    const pw = parseFloat(pageEl.getAttribute("data-page-width") || "0");
+    const ph = parseFloat(pageEl.getAttribute("data-page-height") || "0");
+    if (pw <= 0 || ph <= 0) return;
+    const pad = 32; // p-4 → 1rem each side
+    const availW = container.clientWidth - pad;
+    const availH = container.clientHeight - pad;
+    if (availW <= 0 || availH <= 0) return;
+    // Page height at zoom z is z·availW·(ph/pw); solve for it to equal availH.
+    const z = (availH * pw) / (availW * ph);
+    setZoom(clamp(z, ZOOM_MIN, ZOOM_MAX));
+  }, []);
+
+  return (
+    <div className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border">
+      {/* Preview toolbar: zoom + fit */}
+      <div className="flex items-center gap-1 border-b border-border bg-card px-2 py-1 text-sm">
+        <button
+          type="button"
+          onClick={() => zoomBy(0.8)}
+          className="rounded p-1 text-muted transition hover:text-accent"
+          aria-label="Zoom out"
+        >
+          <ZoomOut size={16} />
+        </button>
+        <span className="w-12 text-center tabular-nums text-muted">
+          {Math.round(zoom * 100)}%
+        </span>
+        <button
+          type="button"
+          onClick={() => zoomBy(1.25)}
+          className="rounded p-1 text-muted transition hover:text-accent"
+          aria-label="Zoom in"
+        >
+          <ZoomIn size={16} />
+        </button>
+        <button
+          type="button"
+          onClick={() => setZoom(1)}
+          className="ml-1 inline-flex items-center gap-1 rounded px-1.5 py-1 text-xs text-muted transition hover:text-accent"
+        >
+          <Maximize2 size={13} /> Fit width
+        </button>
+        <button
+          type="button"
+          onClick={fitPage}
+          className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-xs text-muted transition hover:text-accent"
+        >
+          <StretchVertical size={13} /> Fit page
+        </button>
+
+        {/* Page navigation (multi-page docs). */}
+        {pageCount > 1 && (
+          <div className="ml-2 flex items-center gap-0.5 text-xs text-muted">
+            <button
+              type="button"
+              onClick={() => scrollToPage(currentPage - 1)}
+              disabled={currentPage <= 1}
+              className="rounded p-1 transition hover:text-accent disabled:opacity-40"
+              aria-label="Previous page"
+            >
+              <ChevronLeft size={15} />
+            </button>
+            <span className="tabular-nums">
+              {currentPage} / {pageCount}
+            </span>
+            <button
+              type="button"
+              onClick={() => scrollToPage(currentPage + 1)}
+              disabled={currentPage >= pageCount}
+              className="rounded p-1 transition hover:text-accent disabled:opacity-40"
+              aria-label="Next page"
+            >
+              <ChevronRight size={15} />
+            </button>
+          </div>
+        )}
+
+        <div className="ml-auto flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setJumpEnabled((v) => !v)}
+            aria-pressed={jumpEnabled}
+            title="Jump to source when a reference is clicked or preview text is selected"
+            className={`inline-flex items-center gap-1 rounded px-1.5 py-1 text-xs transition ${
+              jumpEnabled ? "text-accent" : "text-muted hover:text-accent"
+            }`}
+          >
+            <Link2 size={13} /> Jump to source
+          </button>
+          <button
+            type="button"
+            onClick={() => setPreviewMode((m) => (m === "svg" ? "text" : "svg"))}
+            aria-pressed={previewMode === "text"}
+            title="Selectable/copyable text (beta)"
+            className={`inline-flex items-center gap-1 rounded px-1.5 py-1 text-xs transition ${
+              previewMode === "text"
+                ? "text-accent"
+                : "text-muted hover:text-accent"
+            }`}
+          >
+            <Type size={13} /> Selectable
+          </button>
+        </div>
+      </div>
+
+      {statusKind === "error" && (
+        <div className="flex items-start gap-2 border-b border-red-600/30 bg-red-500/10 px-3 py-2 text-sm text-red-600">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden />
+          <pre className="min-w-0 whitespace-pre-wrap break-words font-mono text-xs">
+            {errorMessage}
+          </pre>
+        </div>
+      )}
+
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto bg-bg p-4">
+        {statusKind === "loading" ? (
+          <div className="flex h-full items-center justify-center gap-2 text-muted">
+            <Loader2 size={18} className="animate-spin" aria-hidden />
+            Loading the Typst compiler…
+          </div>
+        ) : (
+          <div className="relative mx-auto" style={{ width: `${zoom * 100}%` }}>
+            {/* Selectable text (DOM render mode). Hidden in svg mode. */}
+            <div
+              ref={domContainerRef}
+              className={`[&_svg]:h-auto [&_svg]:w-full [&_svg]:bg-white [&_svg]:shadow-lg ${
+                previewMode === "text" ? "" : "hidden"
+              }`}
+            />
+            {/* Image (SVG string) preview. */}
+            {previewMode === "svg" &&
+              (svg ? (
+                <SvgDocument html={svg} />
+              ) : (
+                <div className="py-16 text-center text-muted">
+                  No preview yet.
+                </div>
+              ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+});
+
+/**
+ * The rendered document. Memoised on the SVG string: setting
+ * `dangerouslySetInnerHTML` reparses the entire (potentially multi-megabyte)
+ * document, so it must happen only when the markup actually changes — never
+ * because some unrelated bit of preview state did.
+ */
+const SvgDocument = memo(function SvgDocument({ html }: { html: string }) {
+  return (
+    <div
+      className="[&_svg]:h-auto [&_svg]:w-full [&_svg]:bg-white [&_svg]:shadow-lg"
+      // Produced by our own local WASM compiler from the user's own input —
+      // no external/untrusted HTML.
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+});
 
 function MenuItem({
   onClick,

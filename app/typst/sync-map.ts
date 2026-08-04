@@ -1,13 +1,14 @@
 /**
- * Section mapping for editor ↔ preview scroll sync.
+ * Section mapping used to resolve a *jump target* from the preview back into
+ * the source.
  *
- * Exact heading-to-preview-position mapping isn't reliably available from
- * typst.ts in the browser (spans/positions are resolved server-side in the
- * real tools). So this uses a *proportional* model anchored on the document's
- * headings: a character offset in the source maps to a fraction of the source,
- * which maps to the same fraction of the preview's scroll range. Headings only
- * define the boundaries of the highlighted "section band" — the mapping itself
- * is proportional. Coarse but robust, and it degrades gracefully.
+ * Exact position mapping isn't reliably available from typst.ts in the browser
+ * (spans/positions are resolved server-side in the real tools), so a preview
+ * position is turned into a fraction of the document and then into the nearest
+ * heading-delimited section. That approximation is only ever paid on an
+ * explicit user gesture (clicking a reference, selecting preview text) — there
+ * is deliberately no continuous viewport sync built on top of it, because the
+ * mapping is far too coarse to survive being applied every frame.
  *
  * All functions here are pure and unit-tested; the DOM wiring lives in the
  * editor component.
@@ -32,26 +33,60 @@ export interface Section {
 }
 
 const HEADING_RE = /^(=+)[ \t]+(.+)$/;
+const FENCE_RE = /^`{3,}/;
 
 /**
  * Extract top-level-ish headings from Typst source. Best-effort and
  * deliberately simple: a line beginning with one or more `=` followed by
  * whitespace and text. Lines inside raw blocks (```) are skipped so fenced
  * code doesn't produce phantom headings.
+ *
+ * Fence tracking is deliberately forgiving:
+ *  - a fence closes only on a run of at least as many backticks as opened it,
+ *  - a fence that opens and closes on the same line (`` ```rs let x = 1``` ``)
+ *    doesn't open a block,
+ *  - an *unterminated* fence is treated as ordinary text rather than swallowing
+ *    every heading to the end of the document.
  */
 export function extractHeadings(source: string): Heading[] {
   const headings: Heading[] = [];
+  // Headings hidden by the currently-open fence. If that fence never closes it
+  // wasn't a fence at all, so they get restored at EOF.
+  let suppressed: Heading[] = [];
   let offset = 0;
-  let inRawFence = false;
+  let fenceLen = 0; // 0 → not inside a raw block
   const lines = source.split("\n");
   for (const line of lines) {
-    const fence = line.trimStart().startsWith("```");
-    if (fence) inRawFence = !inRawFence;
-    else if (!inRawFence) {
+    const trimmed = line.trimStart();
+    const leadingWs = line.length - trimmed.length;
+    const fence = FENCE_RE.exec(trimmed);
+    if (fenceLen === 0) {
+      if (fence) {
+        // Opening a block only counts when it isn't closed on the same line —
+        // by a run at least as long as the opener, matching the close rule.
+        const rest = trimmed.slice(fence[0].length);
+        const closesHere = new RegExp("`{" + fence[0].length + ",}").test(rest);
+        if (!closesHere) {
+          fenceLen = fence[0].length;
+          suppressed = [];
+        }
+      } else {
+        const m = HEADING_RE.exec(line);
+        if (m) {
+          headings.push({
+            offset: offset + leadingWs,
+            level: m[1].length,
+            text: m[2].trim(),
+          });
+        }
+      }
+    } else if (fence && fence[0].length >= fenceLen) {
+      fenceLen = 0;
+      suppressed = [];
+    } else {
       const m = HEADING_RE.exec(line);
       if (m) {
-        const leadingWs = line.length - line.trimStart().length;
-        headings.push({
+        suppressed.push({
           offset: offset + leadingWs,
           level: m[1].length,
           text: m[2].trim(),
@@ -60,6 +95,8 @@ export function extractHeadings(source: string): Heading[] {
     }
     offset += line.length + 1; // +1 for the split "\n"
   }
+  // Unbalanced fence: don't let it eat the rest of the document.
+  if (fenceLen !== 0 && suppressed.length > 0) headings.push(...suppressed);
   return headings;
 }
 
@@ -115,25 +152,19 @@ export function sectionIndexForOffset(
   return sections.length - 1;
 }
 
-/** Find the section (index) whose fraction range contains `fraction`. */
-export function sectionIndexForFraction(
-  sections: Section[],
-  fraction: number,
-  docLength: number,
-): number {
-  return sectionIndexForOffset(sections, fractionToOffset(fraction, docLength));
-}
-
 /**
- * The preview-scroll band [topFraction, bottomFraction] for a section — the
- * region to highlight. Both in [0, 1].
+ * `buildSections` memoised on the exact source string.
+ *
+ * Splitting + regexing a whole document is far too expensive to redo on every
+ * keystroke, and the section map is only ever consulted on an explicit jump —
+ * so callers resolve it lazily through this cache instead of recomputing it in
+ * an effect. One slot is enough: there is a single document on screen.
  */
-export function sectionBand(
-  section: Section,
-  docLength: number,
-): { top: number; bottom: number } {
-  return {
-    top: offsetToFraction(section.start, docLength),
-    bottom: offsetToFraction(section.end, docLength),
-  };
+let sectionCache: { source: string; sections: Section[] } | null = null;
+
+export function sectionsForSource(source: string): Section[] {
+  if (sectionCache && sectionCache.source === source) return sectionCache.sections;
+  const sections = buildSections(source);
+  sectionCache = { source, sections };
+  return sections;
 }
