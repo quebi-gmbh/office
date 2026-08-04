@@ -4,8 +4,8 @@ import {
   extractHeadings,
   fractionToOffset,
   offsetToFraction,
-  sectionBand,
   sectionIndexForOffset,
+  sectionsForSource,
 } from "./sync-map";
 
 describe("extractHeadings", () => {
@@ -36,6 +36,42 @@ describe("extractHeadings", () => {
 
   test("no headings → empty", () => {
     expect(extractHeadings("just prose\nmore prose\n")).toEqual([]);
+  });
+
+  test("an unbalanced fence doesn't swallow the rest of the document", () => {
+    const src = "= Real\n```\nunterminated\n= Later\nmore\n";
+    expect(extractHeadings(src).map((h) => h.text)).toEqual(["Real", "Later"]);
+  });
+
+  test("a fence opened and closed on one line isn't a block", () => {
+    const src = "```rs let x = 1```\n= Heading\n";
+    expect(extractHeadings(src).map((h) => h.text)).toEqual(["Heading"]);
+  });
+
+  test("a longer fence isn't closed by a shorter run on the same line", () => {
+    const src = "````rs let s = ```x```;\n= inside\n````\n= outside\n";
+    expect(extractHeadings(src).map((h) => h.text)).toEqual(["outside"]);
+  });
+
+  test("a fence closes only on a run at least as long as its opener", () => {
+    const src = "````\n```\n= inside\n````\n= outside\n";
+    expect(extractHeadings(src).map((h) => h.text)).toEqual(["outside"]);
+  });
+});
+
+describe("sectionsForSource", () => {
+  test("returns the same array for the same source (memoised)", () => {
+    const src = "= A\nbody\n= B\nmore";
+    const first = sectionsForSource(src);
+    expect(sectionsForSource(src)).toBe(first);
+    expect(first).toEqual(buildSections(src));
+  });
+
+  test("recomputes when the source changes", () => {
+    const a = sectionsForSource("= A\nbody");
+    const b = sectionsForSource("= A\nbody\n= B\nmore");
+    expect(b).not.toBe(a);
+    expect(b.length).toBe(2);
   });
 });
 
@@ -81,7 +117,7 @@ describe("fraction mapping", () => {
   });
 });
 
-describe("section lookup + band", () => {
+describe("section lookup", () => {
   const src = "= A\n0123456789\n= B\nxyz";
   const secs = buildSections(src);
 
@@ -93,12 +129,8 @@ describe("section lookup + band", () => {
     expect(sectionIndexForOffset(secs, src.length - 1)).toBe(1);
   });
 
-  test("sectionBand is within [0,1] and ordered", () => {
-    for (const s of secs) {
-      const { top, bottom } = sectionBand(s, src.length);
-      expect(top).toBeGreaterThanOrEqual(0);
-      expect(bottom).toBeLessThanOrEqual(1);
-      expect(bottom).toBeGreaterThanOrEqual(top);
-    }
+  test("a fraction resolves to the section covering that offset", () => {
+    const idx = sectionIndexForOffset(secs, fractionToOffset(0.9, src.length));
+    expect(idx).toBe(1);
   });
 });
