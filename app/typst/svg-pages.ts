@@ -5,6 +5,11 @@
  * origin with its own viewBox, so it renders on its own.
  *
  * Pure string manipulation (no DOM) so it's unit-testable and works anywhere.
+ *
+ * The preview no longer holds the document as a string — it is patched into the
+ * DOM incrementally (#128) — so the per-page export asks the render session for
+ * a complete SVG on demand and feeds it to this. The renderer emits the same
+ * markup either way, so nothing here had to change.
  */
 
 const PAGE_OPEN = '<g class="typst-page"';
@@ -62,9 +67,4 @@ export function splitSvgPages(combined: string): SvgPage[] {
     idx = combined.indexOf(PAGE_OPEN, idx + group.length);
   }
   return pages;
-}
-
-/** Number of pages in a combined Typst SVG (cheap; no splitting). */
-export function countPages(combined: string): number {
-  return (combined.match(/class="typst-page"/g) ?? []).length;
 }

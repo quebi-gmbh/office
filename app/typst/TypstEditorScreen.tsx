@@ -26,11 +26,14 @@ import {
 } from "lucide-react";
 import {
   compilePdf,
-  compileSvgLatest,
+  compilePreviewLatest,
+  currentPreviewSvg,
   getTypst,
   renderDomInto,
+  resetPreviewSession,
   type DomHandle,
 } from "./typst-runtime";
+import { applyPreviewFrame, PREVIEW_ROOT_CLASS } from "./svg-patch";
 import {
   usePendingFileOpen,
   useUnsavedGuard,
@@ -55,7 +58,7 @@ import {
   type PageTarget,
 } from "./preview-coords";
 import { setSyncLine, syncHighlight } from "./sync-highlight";
-import { countPages, splitSvgPages } from "./svg-pages";
+import { splitSvgPages } from "./svg-pages";
 import {
   downloadBlob,
   hashToSource,
@@ -123,7 +126,13 @@ function useLatestRef<T>(value: T) {
 
 export function TypstEditorScreen() {
   const [source, setSource] = useState<string>(loadInitialSource);
-  const [svg, setSvg] = useState<string>("");
+  /**
+   * What the preview currently shows. Deliberately *not* the document itself:
+   * the rendered SVG lives only in the DOM, patched in place compile by compile
+   * (see typst-runtime.ts), and this is the little that the React tree needs to
+   * know about it. A fresh object per compile, so effects keyed on it re-run.
+   */
+  const [doc, setDoc] = useState<PreviewDoc | null>(null);
   const [compiledSource, setCompiledSource] = useState<string>("");
   const [status, setStatus] = useState<Status>({ kind: "loading" });
   const [lastCompileMs, setLastCompileMs] = useState<number | null>(null);
@@ -144,12 +153,14 @@ export function TypstEditorScreen() {
 
   const sourceRef = useLatestRef(source);
 
-  const pageCount = useMemo(
-    () => (svg ? Math.max(1, countPages(svg)) : 1),
-    [svg],
-  );
+  /** The element the document is patched into; React owns nothing inside it. */
+  const previewHostRef = useRef<HTMLDivElement | null>(null);
 
-  const stale = status.kind === "ready" && !!svg && source !== compiledSource;
+  const pageCount = Math.max(1, doc?.pageCount ?? 1);
+  const hasDocument = doc !== null;
+
+  const stale =
+    status.kind === "ready" && hasDocument && source !== compiledSource;
 
   const flashNotice = useCallback((msg: string) => {
     setNotice(msg);
@@ -204,6 +215,8 @@ export function TypstEditorScreen() {
 
   /** Last source handed to the compiler — auto-compile never retries it. */
   const attemptedSourceRef = useRef<string | null>(null);
+  /** Guards the rebuild path below against retrying itself forever. */
+  const rebuildingRef = useRef(false);
 
   const runCompile = useCallback(async (src: string) => {
     const id = ++compileIdRef.current;
@@ -211,15 +224,45 @@ export function TypstEditorScreen() {
     setStatus({ kind: "compiling" });
     const started = performance.now();
     try {
-      const result = await compileSvgLatest(src);
-      // A newer request took over (or we're gone): it owns the UI now.
+      const result = await compilePreviewLatest(src);
+      // A newer request took over before this one ran: it owns the UI now.
       if (result.kind === "superseded") return;
-      if (!aliveRef.current || id !== compileIdRef.current) return;
-      setSvg(result.svg);
-      setCompiledSource(src);
-      setLastCompileMs(Math.round(performance.now() - started));
-      setStatus({ kind: "ready" });
+      if (!aliveRef.current) return;
+
+      // Frames are cumulative — each one patches the DOM the previous one left
+      // behind — so every frame the compiler hands back has to be applied, even
+      // one a newer compile has already overtaken. That is why this happens
+      // here, in compile order, instead of via React state: a dropped or
+      // batched-away frame would leave the DOM a step behind what the renderer
+      // believes it drew, and the next patch would fail against it.
+      const host = previewHostRef.current;
+      const applied = host ? applyPreviewFrame(host, result.frame) : "failed";
+      setDoc({ pageCount: result.frame.pageCount });
+
+      // Bookkeeping, unlike the frame itself, belongs to the newest compile.
+      if (id === compileIdRef.current) {
+        setCompiledSource(src);
+        setLastCompileMs(Math.round(performance.now() - started));
+        setStatus({ kind: "ready" });
+      }
+
+      if (applied !== "failed") {
+        rebuildingRef.current = false;
+      } else if (!rebuildingRef.current) {
+        // The live DOM and the renderer have diverged. Throw the incremental
+        // state away and compile again: a fresh session's first frame is
+        // standalone, so this resolves in one round and cannot loop.
+        rebuildingRef.current = true;
+        resetPreviewSession();
+        setDoc(null);
+        attemptedSourceRef.current = null;
+        // Declared just below; only ever called long after this render.
+        void runCompileRef.current(src);
+      }
     } catch (err) {
+      // A rebuild that never got as far as a frame is over; let the next
+      // divergence start a fresh one rather than latching the guard on.
+      rebuildingRef.current = false;
       if (!aliveRef.current || id !== compileIdRef.current) return;
       setStatus({
         kind: "error",
@@ -311,20 +354,25 @@ export function TypstEditorScreen() {
     }
   }, [sourceRef]);
 
-  const downloadSvg = useCallback(() => {
-    if (!svg) return;
-    downloadBlob(new Blob([svg], { type: "image/svg+xml" }), "document.svg");
-  }, [svg]);
+  // The preview never materialises the whole document as a string any more, so
+  // the exports that need one ask the render session for it on demand.
+  const downloadSvg = useCallback(async () => {
+    try {
+      const svg = await currentPreviewSvg();
+      downloadBlob(new Blob([svg], { type: "image/svg+xml" }), "document.svg");
+    } catch (err) {
+      flashNotice(err instanceof Error ? err.message : "SVG export failed");
+    }
+  }, [flashNotice]);
 
   const downloadPng = useCallback(async () => {
-    if (!svg) return;
     try {
-      const blob = await svgToPngBlob(svg, 2);
+      const blob = await svgToPngBlob(await currentPreviewSvg(), 2);
       downloadBlob(blob, "document.png");
     } catch (err) {
       flashNotice(err instanceof Error ? err.message : "PNG export failed");
     }
-  }, [svg, flashNotice]);
+  }, [flashNotice]);
 
   const copySource = useCallback(async () => {
     try {
@@ -353,20 +401,23 @@ export function TypstEditorScreen() {
 
   // Download whichever page is currently in view (read from the preview pane's
   // ref, so page changes don't rerender this screen).
-  const downloadCurrentPageSvg = useCallback(() => {
-    if (!svg) return;
-    const pages = splitSvgPages(svg);
-    const n = clamp(currentPageRef.current, 1, pages.length);
-    const page = pages[n - 1];
-    if (!page) {
-      flashNotice("No page to export");
-      return;
+  const downloadCurrentPageSvg = useCallback(async () => {
+    try {
+      const pages = splitSvgPages(await currentPreviewSvg());
+      const n = clamp(currentPageRef.current, 1, pages.length);
+      const page = pages[n - 1];
+      if (!page) {
+        flashNotice("No page to export");
+        return;
+      }
+      downloadBlob(
+        new Blob([page.svg], { type: "image/svg+xml" }),
+        `document-page-${n}.svg`,
+      );
+    } catch (err) {
+      flashNotice(err instanceof Error ? err.message : "Page export failed");
     }
-    downloadBlob(
-      new Blob([page.svg], { type: "image/svg+xml" }),
-      `document-page-${n}.svg`,
-    );
-  }, [svg, flashNotice]);
+  }, [currentPageRef, flashNotice]);
 
   // ── Workspace: open a .typ handed off from the sidebar; save writes back ───
   const saveToWorkspace = useCallback(async (): Promise<boolean> => {
@@ -473,7 +524,8 @@ export function TypstEditorScreen() {
     [sourceRef],
   );
 
-  // Timers outlive the component unless we say otherwise.
+  // Timers — and the wasm-side incremental state, which describes a preview DOM
+  // that is about to stop existing — outlive the component unless we say so.
   useEffect(() => {
     return () => {
       if (highlightTimer.current) clearTimeout(highlightTimer.current);
@@ -481,6 +533,7 @@ export function TypstEditorScreen() {
       highlightTimer.current = null;
       noticeTimer.current = null;
       editorViewRef.current = null;
+      resetPreviewSession();
     };
   }, []);
 
@@ -544,15 +597,24 @@ export function TypstEditorScreen() {
                   Save to {wsFileName}
                 </MenuItem>
               )}
-              <MenuItem onClick={downloadSvg} disabled={!svg}>
+              <MenuItem
+                onClick={() => void downloadSvg()}
+                disabled={!hasDocument}
+              >
                 Download SVG
               </MenuItem>
               {pageCount > 1 && (
-                <MenuItem onClick={downloadCurrentPageSvg} disabled={!svg}>
+                <MenuItem
+                  onClick={() => void downloadCurrentPageSvg()}
+                  disabled={!hasDocument}
+                >
                   Download current page (SVG)
                 </MenuItem>
               )}
-              <MenuItem onClick={() => void downloadPng()} disabled={!svg}>
+              <MenuItem
+                onClick={() => void downloadPng()}
+                disabled={!hasDocument}
+              >
                 Download PNG
               </MenuItem>
               <MenuItem onClick={() => void copySource()}>Copy source</MenuItem>
@@ -589,7 +651,8 @@ export function TypstEditorScreen() {
         </div>
 
         <PreviewPane
-          svg={svg}
+          doc={doc}
+          previewHostRef={previewHostRef}
           statusKind={status.kind}
           errorMessage={status.kind === "error" ? status.message : null}
           compiledSource={compiledSource}
@@ -603,8 +666,16 @@ export function TypstEditorScreen() {
   );
 }
 
+/** The little the React tree knows about the rendered document. */
+interface PreviewDoc {
+  pageCount: number;
+}
+
 interface PreviewPaneProps {
-  svg: string;
+  /** Null until the first compile lands; a new object after each one. */
+  doc: PreviewDoc | null;
+  /** Where the rendered document is patched in — see {@link SvgDocument}. */
+  previewHostRef: React.RefObject<HTMLDivElement | null>;
   statusKind: Status["kind"];
   errorMessage: string | null;
   compiledSource: string;
@@ -625,7 +696,8 @@ interface PreviewPaneProps {
  * editor either. All props are per-compile values or stable callbacks.
  */
 const PreviewPane = memo(function PreviewPane({
-  svg,
+  doc,
+  previewHostRef,
   statusKind,
   errorMessage,
   compiledSource,
@@ -688,8 +760,10 @@ const PreviewPane = memo(function PreviewPane({
   // Wire typst's internal reference links. The SVG emits, per cross-reference,
   // `<a onclick="handleTypstLocation(this, page, x, y); return false">`. We
   // (1) provide the global it calls, and (2) also intercept clicks directly by
-  // parsing that attribute — belt-and-braces, since inline handlers injected via
-  // innerHTML don't always fire for SVG anchors.
+  // parsing that attribute. (2) is what actually fires: the renderer's own
+  // bootstrap `<script>` never runs — it isn't part of the incremental frames,
+  // and wasn't executed by `innerHTML` before them either. The listener sits on
+  // the scroll container, which the preview patching never touches.
   useEffect(() => {
     const win = window as unknown as Record<string, unknown>;
     win.handleTypstLocation = (
@@ -828,7 +902,7 @@ const PreviewPane = memo(function PreviewPane({
       container.removeEventListener("scroll", onScroll);
       if (raf) cancelAnimationFrame(raf);
     };
-  }, [previewMode, statusKind, svg, currentPageRef]);
+  }, [previewMode, statusKind, doc, currentPageRef]);
 
   // Fit a whole page in the preview viewport (zoom = fraction of preview width).
   const fitPage = useCallback(() => {
@@ -957,22 +1031,26 @@ const PreviewPane = memo(function PreviewPane({
           </div>
         ) : (
           <div className="relative mx-auto" style={{ width: `${zoom * 100}%` }}>
-            {/* Selectable text (DOM render mode). Hidden in svg mode. */}
+            {/* Selectable text (DOM render mode). Hidden in svg mode. It emits
+                one <svg> per page, so it keeps the descendant utilities. */}
             <div
               ref={domContainerRef}
-              className={`[&_svg]:h-auto [&_svg]:w-full [&_svg]:bg-white [&_svg]:shadow-lg ${
+              className={`${PREVIEW_ROOT_CLASS} [&_svg]:h-auto [&_svg]:w-full [&_svg]:bg-white [&_svg]:shadow-lg ${
                 previewMode === "text" ? "" : "hidden"
               }`}
             />
-            {/* Image (SVG string) preview. */}
-            {previewMode === "svg" &&
-              (svg ? (
-                <SvgDocument html={svg} />
-              ) : (
-                <div className="py-16 text-center text-muted">
-                  No preview yet.
-                </div>
-              ))}
+            {/* Rendered document. Stays mounted even while the selectable
+                preview is showing: its DOM is patched in place from one compile
+                to the next, so discarding it would force a full rebuild. */}
+            <SvgDocument
+              hostRef={previewHostRef}
+              hidden={previewMode !== "svg"}
+            />
+            {previewMode === "svg" && !doc && (
+              <div className="py-16 text-center text-muted">
+                No preview yet.
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -981,18 +1059,32 @@ const PreviewPane = memo(function PreviewPane({
 });
 
 /**
- * The rendered document. Memoised on the SVG string: setting
- * `dangerouslySetInnerHTML` reparses the entire (potentially multi-megabyte)
- * document, so it must happen only when the markup actually changes — never
- * because some unrelated bit of preview state did.
+ * The rendered document — an empty element, on purpose.
+ *
+ * React owns this node and nothing inside it: the subtree is built once and
+ * then patched in place by {@link applyPreviewFrame} as compiles land (#128).
+ * Giving React children here — or unmounting the component between compiles —
+ * would put React and the patcher in conflict over the same nodes and hand back
+ * the wholesale rebuild this replaced. Rendering it therefore costs nothing and
+ * never depends on the document, which is why it takes only a ref.
+ *
+ * The width/background utilities target the root `<svg>` through a child
+ * combinator rather than a descendant one, so the style matcher never has to
+ * walk into the tens of thousands of nodes below it.
  */
-const SvgDocument = memo(function SvgDocument({ html }: { html: string }) {
+const SvgDocument = memo(function SvgDocument({
+  hostRef,
+  hidden,
+}: {
+  hostRef: React.RefObject<HTMLDivElement | null>;
+  hidden: boolean;
+}) {
   return (
     <div
-      className="[&_svg]:h-auto [&_svg]:w-full [&_svg]:bg-white [&_svg]:shadow-lg"
-      // Produced by our own local WASM compiler from the user's own input —
-      // no external/untrusted HTML.
-      dangerouslySetInnerHTML={{ __html: html }}
+      ref={hostRef}
+      className={`${PREVIEW_ROOT_CLASS} [&>svg]:h-auto [&>svg]:w-full [&>svg]:bg-white [&>svg]:shadow-lg${
+        hidden ? " hidden" : ""
+      }`}
     />
   );
 });

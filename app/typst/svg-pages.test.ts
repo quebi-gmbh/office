@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { countPages, splitSvgPages } from "./svg-pages";
+import { splitSvgPages } from "./svg-pages";
 
 // A minimal stand-in for typst's SVG: shared defs + two stacked page groups,
 // each with nested <g> and self-referencing <use>.
@@ -15,11 +15,6 @@ const COMBINED =
   `</svg>`;
 
 describe("svg-pages", () => {
-  test("countPages counts typst-page groups", () => {
-    expect(countPages(COMBINED)).toBe(2);
-    expect(countPages("<svg></svg>")).toBe(0);
-  });
-
   test("splitSvgPages yields one standalone svg per page", () => {
     const pages = splitSvgPages(COMBINED);
     expect(pages.length).toBe(2);
