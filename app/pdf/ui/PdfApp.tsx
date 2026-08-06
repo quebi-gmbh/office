@@ -49,6 +49,8 @@ import { FormsPanel } from "~/pdf/ui/panels/FormsPanel";
 import { MetadataPanel } from "~/pdf/ui/panels/MetadataPanel";
 import { SecurityPanel } from "~/pdf/ui/panels/SecurityPanel";
 import { CropPanel } from "~/pdf/ui/panels/CropPanel";
+import { AnnotateWorkspace } from "~/pdf/ui/AnnotateWorkspace";
+import { burnAnnotations } from "~/pdf/lib/annotate";
 
 const THUMB_WIDTH = 128;
 const PREVIEW_WIDTH = 520;
@@ -92,7 +94,7 @@ export function PdfApp() {
   // Default to the Pages panel as soon as a doc is open.
   useEffect(() => {
     if (activeDoc && !activePanel) setActivePanel("pages");
-    if (!activeDoc && activePanel === "pages") setActivePanel(null);
+    if (!activeDoc && (activePanel === "pages" || activePanel === "draw")) setActivePanel(null);
   }, [activeDoc, activePanel]);
 
   // Detect whether the active (encrypted) doc still needs a password before its
@@ -173,9 +175,12 @@ export function PdfApp() {
   }, []);
 
   // Replace the active doc's bytes (used after every editing operation).
-  const replaceActiveBytes = useCallback(async (bytes: Uint8Array) => {
+  const replaceActiveBytes = useCallback(async (
+    bytes: Uint8Array,
+    opts: { clearAnnots?: boolean } = {},
+  ) => {
     if (!activeDoc) return;
-    const next = await replaceBytes(activeDoc, bytes);
+    const next = await replaceBytes(activeDoc, bytes, opts);
     invalidateDoc(activeDoc.id);
     setDocs((prev) => prev.map((d) => (d.id === activeDoc.id ? next : d)));
     setPreviewPage((p) => (p !== null && p >= next.pageCount ? null : p));
@@ -194,7 +199,28 @@ export function PdfApp() {
     setDocs((prev) => prev.map((d) => (d.id === id ? updater(d) : d)));
   }, []);
 
+  // Draw mode: burn the live annotation layer into the bytes, then drop it.
+  const applyAnnotations = useCallback(async () => {
+    if (!activeDoc || activeDoc.annots.length === 0) return;
+    setBusy(true);
+    try {
+      const out = await burnAnnotations(activeDoc.bytes, activeDoc.annots);
+      await replaceActiveBytes(out, { clearAnnots: true });
+      const n = activeDoc.annots.length;
+      showToast(`Applied ${n} annotation${n === 1 ? "" : "s"}`);
+    } catch (e) {
+      showToast(`Apply failed: ${(e as Error).message}`, "error");
+    } finally {
+      setBusy(false);
+    }
+  }, [activeDoc, replaceActiveBytes, showToast]);
+
   const closeDoc = useCallback((id: string) => {
+    const doomed = docs.find((d) => d.id === id);
+    if (doomed && doomed.annots.length > 0 &&
+        !window.confirm(`${doomed.name} has ${doomed.annots.length} unapplied annotation(s). Close anyway?`)) {
+      return;
+    }
     invalidateDoc(id);
     setDocs((prev) => prev.filter((d) => d.id !== id));
     setActiveDocId((cur) => {
@@ -206,12 +232,24 @@ export function PdfApp() {
 
   const saveActive = useCallback(async () => {
     if (!activeDoc) return;
+    // Saving implies committing the live annotation layer — otherwise the file
+    // on disk would silently lack the ink the user can see on screen.
+    let bytes = activeDoc.bytes;
+    if (activeDoc.annots.length > 0) {
+      try {
+        bytes = await burnAnnotations(activeDoc.bytes, activeDoc.annots);
+        await replaceActiveBytes(bytes, { clearAnnots: true });
+      } catch (e) {
+        showToast(`Couldn't apply annotations: ${(e as Error).message}`, "error");
+        return;
+      }
+    }
     const ref = wsRefs.current.get(activeDoc.id);
     if (ref) {
       try {
         await writeBlob(
           ref,
-          new Blob([activeDoc.bytes as BlobPart], { type: "application/pdf" }),
+          new Blob([bytes as BlobPart], { type: "application/pdf" }),
         );
         setDirtyDocs((s) => {
           if (!s.has(activeDoc.id)) return s;
@@ -225,12 +263,12 @@ export function PdfApp() {
       }
       return;
     }
-    downloadBytes(activeDoc.bytes, suffixedName(activeDoc.name));
+    downloadBytes(bytes, suffixedName(activeDoc.name));
     showToast(`Saved ${suffixedName(activeDoc.name)}`);
-  }, [activeDoc, showToast]);
+  }, [activeDoc, replaceActiveBytes, showToast]);
 
   useUnsavedGuard({
-    dirty: !!activeDoc && dirtyDocs.has(activeDoc.id),
+    dirty: !!activeDoc && (dirtyDocs.has(activeDoc.id) || activeDoc.annots.length > 0),
     name: activeDoc?.name ?? "PDF",
     save: async () => {
       await saveActive();
@@ -393,7 +431,26 @@ export function PdfApp() {
 
         {/* Workspace */}
         <div className="flex min-w-0 flex-1 flex-col gap-3">
-          {activeDoc ? (
+          {activeDoc && activePanel === "draw" ? (
+            /* Draw mode takes over the whole workspace — the 540px preview is
+               far too cramped to actually draw in. */
+            <>
+              {pwNeeded && (
+                <PasswordPrompt
+                  incorrect={pwNeeded === "incorrect"}
+                  busy={busy}
+                  onSubmit={submitPassword}
+                />
+              )}
+              <AnnotateWorkspace
+                doc={activeDoc}
+                busy={busy}
+                onUpdateDoc={updateDoc}
+                onApply={applyAnnotations}
+                onToast={showToast}
+              />
+            </>
+          ) : activeDoc ? (
             <>
               {/* Password prompt for encrypted docs that can't render yet */}
               {pwNeeded && (
@@ -537,6 +594,7 @@ export function PdfApp() {
 function labelFor(p: PanelId | null): string {
   switch (p) {
     case "pages": return "Pages";
+    case "draw": return "Draw";
     case "merge": return "Merge documents";
     case "split": return "Split document";
     case "watermark": return "Text watermark";
@@ -592,6 +650,10 @@ function PanelHost({
       return <SecurityPanel doc={activeDoc} busy={busy} onReplace={onReplace} onToast={onToast} />;
     case "crop":
       return <CropPanel doc={activeDoc} busy={busy} onReplace={onReplace} onToast={onToast} />;
+    case "draw":
+      // Draw mode swaps the whole workspace (see AnnotateWorkspace); this
+      // branch only runs if the panel host is reached without a document.
+      return <p className="text-sm text-muted">Open a PDF to start drawing.</p>;
     default:
       return <p className="text-sm text-muted">Pick an operation from the left rail.</p>;
   }

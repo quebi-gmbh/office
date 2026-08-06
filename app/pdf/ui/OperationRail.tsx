@@ -4,11 +4,12 @@
 import type { ReactNode } from "react";
 import {
   Combine, Scissors, RotateCw, Stamp, Image, Hash,
-  ScanText, FilePen, Info, Lock, Crop, Layers,
+  ScanText, FilePen, Info, Lock, Crop, Layers, Pencil,
 } from "lucide-react";
 
 export type PanelId =
   | "pages"
+  | "draw"
   | "merge"
   | "split"
   | "watermark"
@@ -34,6 +35,7 @@ type Item = {
 
 const ITEMS: Item[] = [
   { id: "pages",         label: "Pages",            desc: "Rotate, delete, duplicate, extract, resize, insert blank.", icon: <Layers size={16} aria-hidden />, needsDoc: true },
+  { id: "draw",          label: "Draw",             desc: "Pen, highlighter, shapes, text and signatures — burned in as vector ink.", icon: <Pencil size={16} aria-hidden />, needsDoc: true },
   { id: "merge",         label: "Merge",            desc: "Combine all open PDFs into one.",                            icon: <Combine size={16} aria-hidden />, needsMultiDoc: true },
   { id: "split",         label: "Split",            desc: "Split by ranges / every N / one per page.",                 icon: <Scissors size={16} aria-hidden />, needsDoc: true },
   { id: "crop",          label: "Crop",             desc: "Set MediaBox + CropBox.",                                   icon: <Crop size={16} aria-hidden />, needsDoc: true },

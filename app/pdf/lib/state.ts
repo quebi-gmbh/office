@@ -7,6 +7,7 @@
  * cache so renderings refresh.
  */
 import { loadPdfDoc } from "~/pdf/io/pdflib";
+import type { Annotation } from "~/pdf/lib/annotate";
 
 export type OpenDoc = {
   /** Stable per-session id (Math.random base36). */
@@ -26,6 +27,12 @@ export type OpenDoc = {
   password?: string;
   /** 0-based page indices selected by the user. */
   selected: Set<number>;
+  /**
+   * Live annotation layer (Draw mode). Strokes/shapes live here across pages
+   * until the user hits Apply, which burns them into `bytes`. Purely transient:
+   * closing the doc discards anything unburned.
+   */
+  annots: Annotation[];
 };
 
 function genId(): string {
@@ -42,19 +49,46 @@ export async function createDoc(name: string, bytes: Uint8Array): Promise<OpenDo
     rev: 0,
     encrypted: pdf.isEncrypted,
     selected: new Set<number>(),
+    annots: [],
   };
 }
 
-export async function replaceBytes(doc: OpenDoc, bytes: Uint8Array): Promise<OpenDoc> {
+/**
+ * Swap in freshly-produced bytes. Selection is dropped (it no longer maps
+ * cleanly); the annotation layer is kept but clamped to the new page count,
+ * unless `clearAnnots` says the new bytes already contain the ink.
+ */
+export async function replaceBytes(
+  doc: OpenDoc,
+  bytes: Uint8Array,
+  opts: { clearAnnots?: boolean } = {},
+): Promise<OpenDoc> {
   const pdf = await loadPdfDoc(bytes);
+  const pageCount = pdf.getPageCount();
   return {
     ...doc,
     bytes,
-    pageCount: pdf.getPageCount(),
+    pageCount,
     rev: doc.rev + 1,
     encrypted: pdf.isEncrypted,
     selected: new Set<number>(), // selection no longer maps cleanly
+    annots: opts.clearAnnots ? [] : doc.annots.filter((a) => a.page < pageCount),
   };
+}
+
+export function addAnnot(doc: OpenDoc, annot: Annotation): OpenDoc {
+  return { ...doc, annots: [...doc.annots, annot] };
+}
+
+export function removeAnnots(doc: OpenDoc, ids: string[]): OpenDoc {
+  if (ids.length === 0) return doc;
+  const drop = new Set(ids);
+  const next = doc.annots.filter((a) => !drop.has(a.id));
+  return next.length === doc.annots.length ? doc : { ...doc, annots: next };
+}
+
+export function setAnnots(doc: OpenDoc, annots: Annotation[]): OpenDoc {
+  return { ...doc, annots };
 }
 
 /**
