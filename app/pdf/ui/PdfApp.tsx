@@ -27,7 +27,7 @@ import {
   selectAll, clearSelection,
 } from "~/pdf/lib/state";
 import { invalidateDoc, probePassword } from "~/pdf/lib/thumb-cache";
-import type { PasswordErrorKind } from "~/pdf/io/pdfjs";
+import { firstPageParseError, type PasswordErrorKind } from "~/pdf/io/pdfjs";
 import { pickPdfFiles, fetchPdfFromUrl, isPdfFile } from "~/pdf/io/load";
 import { downloadBytes, suffixedName } from "~/pdf/io/save";
 import {
@@ -199,21 +199,41 @@ export function PdfApp() {
     setDocs((prev) => prev.map((d) => (d.id === id ? updater(d) : d)));
   }, []);
 
+  /**
+   * Burn the live annotation layer and hand back the new bytes.
+   *
+   * The result is verified with pdf.js before anyone adopts it: pdf-lib
+   * rewrites the whole file on save, and for some source documents the output
+   * is one readers reject ("Bad (uncompressed) XRef entry: …"). Better to keep
+   * the user's ink and say so than to swap their document for a broken one.
+   */
+  const burnActive = useCallback(async (doc: OpenDoc): Promise<Uint8Array> => {
+    const out = await burnAnnotations(doc.bytes, doc.annots);
+    const problem = await firstPageParseError(out, doc.password);
+    if (problem) {
+      throw new Error(
+        `the rewritten PDF didn't parse back (${problem}). Your annotations are ` +
+        `untouched — try re-saving the original from another viewer first`,
+      );
+    }
+    return out;
+  }, []);
+
   // Draw mode: burn the live annotation layer into the bytes, then drop it.
   const applyAnnotations = useCallback(async () => {
-    if (!activeDoc || activeDoc.annots.length === 0) return;
+    if (!activeDoc || activeDoc.annots.length === 0 || busy) return;
     setBusy(true);
     try {
-      const out = await burnAnnotations(activeDoc.bytes, activeDoc.annots);
-      await replaceActiveBytes(out, { clearAnnots: true });
       const n = activeDoc.annots.length;
+      const out = await burnActive(activeDoc);
+      await replaceActiveBytes(out, { clearAnnots: true });
       showToast(`Applied ${n} annotation${n === 1 ? "" : "s"}`);
     } catch (e) {
       showToast(`Apply failed: ${(e as Error).message}`, "error");
     } finally {
       setBusy(false);
     }
-  }, [activeDoc, replaceActiveBytes, showToast]);
+  }, [activeDoc, busy, burnActive, replaceActiveBytes, showToast]);
 
   const closeDoc = useCallback((id: string) => {
     const doomed = docs.find((d) => d.id === id);
@@ -230,18 +250,21 @@ export function PdfApp() {
     });
   }, [docs]);
 
-  const saveActive = useCallback(async () => {
-    if (!activeDoc) return;
+  /** Returns whether the document actually made it to disk / a download. */
+  const saveActive = useCallback(async (): Promise<boolean> => {
+    // `busy` also covers an Apply in flight — saving mid-burn would write the
+    // pre-burn bytes and then race the replace.
+    if (!activeDoc || busy) return false;
     // Saving implies committing the live annotation layer — otherwise the file
     // on disk would silently lack the ink the user can see on screen.
     let bytes = activeDoc.bytes;
     if (activeDoc.annots.length > 0) {
       try {
-        bytes = await burnAnnotations(activeDoc.bytes, activeDoc.annots);
+        bytes = await burnActive(activeDoc);
         await replaceActiveBytes(bytes, { clearAnnots: true });
       } catch (e) {
         showToast(`Couldn't apply annotations: ${(e as Error).message}`, "error");
-        return;
+        return false;
       }
     }
     const ref = wsRefs.current.get(activeDoc.id);
@@ -260,20 +283,19 @@ export function PdfApp() {
         showToast(`Saved ${activeDoc.name}`);
       } catch (e) {
         showToast(`Save failed: ${(e as Error).message}`, "error");
+        return false;
       }
-      return;
+      return true;
     }
     downloadBytes(bytes, suffixedName(activeDoc.name));
     showToast(`Saved ${suffixedName(activeDoc.name)}`);
-  }, [activeDoc, replaceActiveBytes, showToast]);
+    return true;
+  }, [activeDoc, busy, burnActive, replaceActiveBytes, showToast]);
 
   useUnsavedGuard({
     dirty: !!activeDoc && (dirtyDocs.has(activeDoc.id) || activeDoc.annots.length > 0),
     name: activeDoc?.name ?? "PDF",
-    save: async () => {
-      await saveActive();
-      return true;
-    },
+    save: () => saveActive(),
   });
 
   // Keyboard shortcuts.

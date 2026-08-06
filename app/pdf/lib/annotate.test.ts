@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { PDFDocument, degrees } from "pdf-lib";
+import { PDFArray, PDFDocument, PDFRawStream, decodePDFRawStream, degrees } from "pdf-lib";
 import {
   annotBounds, annotPaths, burnAnnotations, eraseHits, freehandPath,
   getPageBoxes, hexToRgb01, hitTest, normalizeRotation, normalizeSignature,
@@ -313,5 +313,53 @@ describe("burnAnnotations", () => {
       x: 20, y: 20, text: "sign here 👋", size: 12,
     }]);
     expect(out.byteLength).toBeGreaterThan(bytes.byteLength);
+  });
+});
+
+/** Decoded content stream of page `idx`. */
+async function pageContent(bytes: Uint8Array, idx = 0): Promise<string> {
+  const pdf = await PDFDocument.load(bytes);
+  const page = pdf.getPages()[idx]!;
+  const contents = page.node.Contents();
+  const parts = contents instanceof PDFArray
+    ? contents.asArray().map((r) => pdf.context.lookup(r))
+    : [contents];
+  let out = "";
+  for (const part of parts) {
+    if (part instanceof PDFRawStream) {
+      out += new TextDecoder("latin1").decode(decodePDFRawStream(part).decode());
+    }
+  }
+  return out;
+}
+
+describe("burn output shape", () => {
+  test("opaque ink embeds no per-stroke graphics state", async () => {
+    // pdf-lib embeds a *new* ExtGState object per drawSvgPath call that asks
+    // for one, so a many-stroke signature used to add a pile of no-op objects.
+    const bytes = await samplePdf(0, 1);
+    const sig = normalizeSignature([
+      [[0, 0, 0.5], [40, 20, 0.5]],
+      [[10, 30, 0.5], [60, 10, 0.5]],
+      [[20, 5, 0.5], [80, 40, 0.5]],
+    ]);
+    const out = await burnAnnotations(bytes, [{
+      id: "sg", page: 0, kind: "signature", color: "#111827", opacity: 1,
+      x: 40, y: 400, w: 200, h: 200 * sig.aspect, paths: sig.paths,
+    }]);
+    expect(await pageContent(out)).not.toContain(" gs");
+  });
+
+  test("translucent ink still gets its graphics state", async () => {
+    const bytes = await samplePdf(0, 1);
+    const out = await burnAnnotations(bytes, [pen({ opacity: 0.4 })]);
+    expect(await pageContent(out)).toContain(" gs");
+  });
+
+  test("the burn survives a reload of its own output", async () => {
+    const bytes = await samplePdf(0, 1);
+    const once = await burnAnnotations(bytes, [pen()]);
+    const twice = await burnAnnotations(once, [pen({ id: "a2" })]);
+    expect((await PDFDocument.load(twice)).getPageCount()).toBe(1);
   });
 });

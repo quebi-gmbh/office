@@ -110,6 +110,45 @@ export async function loadPdfJsDoc(
 export const PasswordResponseCodes = { NEED_PASSWORD, INCORRECT_PASSWORD } as const;
 
 /**
+ * Smoke-test that a freshly produced document actually parses.
+ *
+ * pdf-lib rewrites the *entire* file on save, and for some real-world source
+ * documents the result is one pdf.js rejects ("Bad (uncompressed) XRef entry:
+ * …" and friends). Silently replacing the user's open document with bytes like
+ * that is the worst possible outcome — the damage is only noticed later, once
+ * the original is gone. So operations that rewrite the document check the
+ * output here first and keep the previous bytes when it doesn't hold up.
+ *
+ * Returns `null` when the document is readable, or the reader's error message.
+ * Password errors are *not* treated as failures — an encrypted document that
+ * needs a password is a different conversation.
+ */
+export async function firstPageParseError(
+  bytes: Uint8Array,
+  password?: string,
+): Promise<string | null> {
+  let doc: PDFDocumentProxy | null = null;
+  try {
+    doc = await loadPdfJsDoc(bytes, password);
+    // Touching page 1's operator list forces the xref/object fetches that a
+    // structural problem hides behind — pdf.js is lazy, so merely opening the
+    // document proves very little.
+    const page = await doc.getPage(1);
+    await page.getOperatorList();
+    return null;
+  } catch (e) {
+    if (passwordErrorKind(e)) return null;
+    return (e as Error)?.message || String(e);
+  } finally {
+    try {
+      await doc?.loadingTask.destroy();
+    } catch {
+      // Best effort — the document is being discarded either way.
+    }
+  }
+}
+
+/**
  * Render a single page to a canvas at the requested CSS width (px). Returns
  * the canvas; caller decides whether to mount or convert to a PNG dataURL.
  */
