@@ -585,9 +585,15 @@ export async function burnAnnotations(
           x: anchor.x,
           y: anchor.y,
           rotate: degrees(anchor.rotate),
-          opacity: spec.opacity,
-          borderOpacity: spec.opacity,
         };
+        // Only ask for a graphics state when it changes something. pdf-lib
+        // embeds a *new* ExtGState object per call, so passing opacity: 1 for
+        // every stroke would bloat a signature (dozens of strokes) with dozens
+        // of pointless objects.
+        if (spec.opacity < 1) {
+          opts.opacity = spec.opacity;
+          opts.borderOpacity = spec.opacity;
+        }
         if (spec.fill) {
           const [r, g, b] = hexToRgb01(spec.fill);
           opts.color = rgb(r, g, b);
