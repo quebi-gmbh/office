@@ -33,17 +33,27 @@ export type DrawStyle = {
   signatureWidth: number;
 };
 
+/** Annotation tools plus the pan ("hand") tool, which draws nothing. */
+export type CanvasTool = AnnotTool | "hand";
+
 type Props = {
   doc: OpenDoc;
   page: number;
   box: PageBox;
   /** CSS pixels per PDF point. */
   zoom: number;
-  tool: AnnotTool;
+  tool: CanvasTool;
   style: DrawStyle;
   signature: StoredSignature | null;
   onAdd: (a: Annotation) => void;
   onErase: (ids: string[]) => void;
+  /**
+   * Drag pans instead of drawing — the hand tool, a held space bar, or the
+   * middle mouse button. Deltas are in CSS pixels, already sign-corrected for
+   * `scrollLeft`/`scrollTop`.
+   */
+  panMode: boolean;
+  onPan: (dx: number, dy: number) => void;
 };
 
 /** Minimum pointer travel (in points) before we record another ink sample. */
@@ -53,14 +63,16 @@ function isShapeAnnot(a: Annotation): a is ShapeAnnot {
   return a.kind === "line" || a.kind === "arrow" || a.kind === "rect" || a.kind === "ellipse";
 }
 
-function cursorFor(tool: AnnotTool): string {
+function cursorFor(tool: CanvasTool, panMode: boolean, grabbing: boolean): string {
+  if (grabbing) return "grabbing";
+  if (panMode) return "grab";
   if (tool === "text") return "text";
   if (tool === "eraser") return "cell";
   return "crosshair";
 }
 
 export function AnnotateCanvas({
-  doc, page, box, zoom, tool, style, signature, onAdd, onErase,
+  doc, page, box, zoom, tool, style, signature, onAdd, onErase, panMode, onPan,
 }: Props) {
   const view = viewSize(box);
   const cssW = Math.round(view.width * zoom);
@@ -71,6 +83,9 @@ export function AnnotateCanvas({
   const svgRef = useRef<SVGSVGElement>(null);
   const active = useRef(false);
   const startPt = useRef<{ x: number; y: number } | null>(null);
+  /** Last pointer position while panning (client px), or null when not panning. */
+  const panFrom = useRef<{ x: number; y: number } | null>(null);
+  const [grabbing, setGrabbing] = useState(false);
 
   // The in-progress annotation is mirrored into a ref so pointer handlers can
   // read the freshest value without reaching into a state updater (which
@@ -104,6 +119,7 @@ export function AnnotateCanvas({
   // Abandon an in-flight stroke when the page or tool changes underneath us.
   useEffect(() => {
     active.current = false;
+    panFrom.current = null;
     draftRef.current = null;
     setDraftState(null);
     textDraftRef.current = null;
@@ -124,6 +140,15 @@ export function AnnotateCanvas({
   };
 
   const onPointerDown = (e: React.PointerEvent) => {
+    // Pan: the hand tool, a held space bar, or the middle mouse button. Takes
+    // priority over drawing so a pan never leaves a stray stroke behind.
+    if (panMode || e.button === 1) {
+      e.preventDefault();
+      svgRef.current?.setPointerCapture(e.pointerId);
+      panFrom.current = { x: e.clientX, y: e.clientY };
+      setGrabbing(true);
+      return;
+    }
     if (e.button !== 0) return;
     const pt = toView(e);
 
@@ -166,6 +191,7 @@ export function AnnotateCanvas({
       });
       return;
     }
+    if (tool === "hand") { active.current = false; return; }
     putDraft({
       ...base,
       kind: tool,
@@ -176,6 +202,13 @@ export function AnnotateCanvas({
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
+    const from = panFrom.current;
+    if (from) {
+      // Dragging right should reveal what's to the left → scroll by -delta.
+      onPan(from.x - e.clientX, from.y - e.clientY);
+      panFrom.current = { x: e.clientX, y: e.clientY };
+      return;
+    }
     if (!active.current) return;
     const pt = toView(e);
 
@@ -224,6 +257,14 @@ export function AnnotateCanvas({
   };
 
   const finish = (e: React.PointerEvent) => {
+    if (panFrom.current) {
+      panFrom.current = null;
+      setGrabbing(false);
+      if (svgRef.current?.hasPointerCapture(e.pointerId)) {
+        svgRef.current.releasePointerCapture(e.pointerId);
+      }
+      return;
+    }
     if (!active.current) return;
     active.current = false;
     if (svgRef.current?.hasPointerCapture(e.pointerId)) {
@@ -288,7 +329,9 @@ export function AnnotateCanvas({
         width={cssW}
         height={cssH}
         className="absolute inset-0"
-        style={{ touchAction: "none", cursor: cursorFor(tool) }}
+        style={{ touchAction: "none", cursor: cursorFor(tool, panMode, grabbing) }}
+        onAuxClick={(e) => e.preventDefault()}
+        onContextMenu={(e) => { if (panMode) e.preventDefault(); }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={finish}
