@@ -13,9 +13,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Pencil, Highlighter, Eraser, Minus, ArrowUpRight, Square, Circle, Type,
   Signature as SignatureIcon, Undo2, Redo2, ZoomIn, ZoomOut, Check, Trash2,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, Hand,
 } from "lucide-react";
-import { AnnotateCanvas, type DrawStyle } from "~/pdf/ui/AnnotateCanvas";
+import { AnnotateCanvas, type CanvasTool, type DrawStyle } from "~/pdf/ui/AnnotateCanvas";
 import { DrawPanel, HIGHLIGHTS } from "~/pdf/ui/panels/DrawPanel";
 import { getPageBoxes, type Annotation, type AnnotTool, type PageBox } from "~/pdf/lib/annotate";
 import { loadSignatures, type StoredSignature } from "~/pdf/lib/signatures";
@@ -24,9 +24,11 @@ import { setAnnots, type OpenDoc } from "~/pdf/lib/state";
 const MAX_HISTORY = 100;
 const ZOOMS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
 
-const TOOLS: { id: AnnotTool; label: string; icon: React.ReactNode; key: string }[] = [
+const TOOLS: {
+  id: CanvasTool; label: string; icon: React.ReactNode; key: string; hint?: string;
+}[] = [
   { id: "pen",         label: "Pen",         icon: <Pencil size={15} aria-hidden />,        key: "p" },
-  { id: "highlighter", label: "Highlighter", icon: <Highlighter size={15} aria-hidden />,   key: "h" },
+  { id: "highlighter", label: "Highlighter", icon: <Highlighter size={15} aria-hidden />,   key: "m" },
   { id: "eraser",      label: "Eraser",      icon: <Eraser size={15} aria-hidden />,        key: "e" },
   { id: "line",        label: "Line",        icon: <Minus size={15} aria-hidden />,         key: "l" },
   { id: "arrow",       label: "Arrow",       icon: <ArrowUpRight size={15} aria-hidden />,  key: "a" },
@@ -34,7 +36,12 @@ const TOOLS: { id: AnnotTool; label: string; icon: React.ReactNode; key: string 
   { id: "ellipse",     label: "Ellipse",     icon: <Circle size={15} aria-hidden />,        key: "o" },
   { id: "text",        label: "Text",        icon: <Type size={15} aria-hidden />,          key: "t" },
   { id: "signature",   label: "Signature",   icon: <SignatureIcon size={15} aria-hidden />, key: "s" },
+  { id: "hand",        label: "Pan",         icon: <Hand size={15} aria-hidden />,          key: "h",
+    hint: "or hold Space, or drag with the middle mouse button" },
 ];
+
+/** Tools whose ink settings the options panel should reflect. */
+const INK_TOOLS: AnnotTool[] = ["pen", "line", "arrow", "rect", "ellipse", "text", "signature"];
 
 const DEFAULT_STYLE: DrawStyle = {
   color: "#111827",
@@ -56,7 +63,11 @@ type Props = {
 };
 
 export function AnnotateWorkspace({ doc, busy, onUpdateDoc, onApply, onToast }: Props) {
-  const [tool, setTool] = useState<AnnotTool>("pen");
+  const [tool, setTool] = useState<CanvasTool>("pen");
+  /** Last real annotation tool — the options panel keeps showing it while panning. */
+  const [annotTool, setAnnotTool] = useState<AnnotTool>("pen");
+  /** Space bar held → temporary pan, the way every other canvas editor works. */
+  const [spaceHeld, setSpaceHeld] = useState(false);
   const [style, setStyle] = useState<DrawStyle>(DEFAULT_STYLE);
   const [page, setPage] = useState(0);
   const [zoom, setZoom] = useState<number | null>(null);
@@ -152,18 +163,26 @@ export function AnnotateWorkspace({ doc, busy, onUpdateDoc, onApply, onToast }: 
    * Switching between pen-ish and marker-ish tools swaps the ink defaults —
    * a black 2.5pt highlighter (or a 16pt yellow pen) is never what you meant.
    */
-  const pickTool = useCallback((id: AnnotTool) => {
+  const pickTool = useCallback((id: CanvasTool) => {
     setTool(id);
+    if (id !== "hand") setAnnotTool(id);
     setStyle((s) => {
       const isMarkerInk = HIGHLIGHTS.includes(s.color);
       if (id === "highlighter" && !isMarkerInk) {
         return { ...s, color: HIGHLIGHTS[0]!, width: Math.max(s.width, 16) };
       }
-      if (id !== "highlighter" && id !== "eraser" && isMarkerInk) {
+      if (isMarkerInk && INK_TOOLS.includes(id as AnnotTool)) {
         return { ...s, color: DEFAULT_STYLE.color, width: DEFAULT_STYLE.width };
       }
       return s;
     });
+  }, []);
+
+  const pan = useCallback((dx: number, dy: number) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollLeft += dx;
+    el.scrollTop += dy;
   }, []);
 
   // ── Shortcuts ─────────────────────────────────────────────────────────────
@@ -179,13 +198,31 @@ export function AnnotateWorkspace({ doc, busy, onUpdateDoc, onApply, onToast }: 
       }
       if (mod && e.key.toLowerCase() === "y") { e.preventDefault(); redo(); return; }
       if (mod) return;
+      if (e.key === " ") {
+        // Leave space alone when a control has focus — it's that control's
+        // activation key.
+        if (t && (t.tagName === "BUTTON" || t.tagName === "A" || t.tagName === "SELECT")) return;
+        e.preventDefault();
+        setSpaceHeld(true);
+        return;
+      }
       if (e.key === "[") { e.preventDefault(); setPage((p) => Math.max(0, p - 1)); return; }
       if (e.key === "]") { e.preventDefault(); setPage((p) => Math.min(doc.pageCount - 1, p + 1)); return; }
       const hit = TOOLS.find((it) => it.key === e.key.toLowerCase());
       if (hit) { e.preventDefault(); pickTool(hit.id); }
     };
+    // Space is released unconditionally (and on blur) so the pan mode can't
+    // stick when focus moves away mid-drag.
+    const onKeyUp = (e: KeyboardEvent) => { if (e.key === " ") setSpaceHeld(false); };
+    const onBlur = () => setSpaceHeld(false);
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
+    };
   }, [undo, redo, pickTool, doc.pageCount]);
 
   const activeSignature = useMemo(
@@ -214,7 +251,7 @@ export function AnnotateWorkspace({ doc, busy, onUpdateDoc, onApply, onToast }: 
               key={it.id}
               type="button"
               onClick={() => pickTool(it.id)}
-              title={`${it.label} (${it.key})`}
+              title={`${it.label} (${it.key})${it.hint ? ` — ${it.hint}` : ""}`}
               aria-pressed={tool === it.id}
               className={`flex items-center gap-1 rounded px-2 py-1.5 text-xs transition ${
                 tool === it.id
@@ -318,6 +355,8 @@ export function AnnotateWorkspace({ doc, busy, onUpdateDoc, onApply, onToast }: 
                 signature={activeSignature}
                 onAdd={addAnnotation}
                 onErase={eraseIds}
+                panMode={tool === "hand" || spaceHeld}
+                onPan={pan}
               />
             </div>
           ) : (
@@ -328,9 +367,14 @@ export function AnnotateWorkspace({ doc, busy, onUpdateDoc, onApply, onToast }: 
         <aside className="w-full shrink-0 overflow-y-auto rounded-xl border border-border bg-card p-3 lg:w-64">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted">
             {TOOLS.find((t) => t.id === tool)?.label ?? "Draw"}
+            {tool === "hand" && (
+              <span className="ml-2 font-normal normal-case tracking-normal">
+                — drag to move the page
+              </span>
+            )}
           </h2>
           <DrawPanel
-            tool={tool}
+            tool={annotTool}
             style={style}
             onStyle={(patch) => setStyle((s) => ({ ...s, ...patch }))}
             signatures={signatures}
