@@ -8,6 +8,7 @@
  */
 import { loadPdfDoc } from "~/pdf/io/pdflib";
 import type { Annotation } from "~/pdf/lib/annotate";
+import type { FieldDraft } from "~/pdf/lib/form-fields";
 
 export type OpenDoc = {
   /** Stable per-session id (Math.random base36). */
@@ -33,6 +34,13 @@ export type OpenDoc = {
    * closing the doc discards anything unburned.
    */
   annots: Annotation[];
+  /**
+   * Live form-field layer (Form fields mode). Hand-placed and auto-detected
+   * field drafts live here across pages until the user hits Apply, which
+   * creates the real AcroForm widgets in `bytes`. Transient like `annots`:
+   * closing the doc discards anything unapplied.
+   */
+  fields: FieldDraft[];
 };
 
 function genId(): string {
@@ -50,18 +58,20 @@ export async function createDoc(name: string, bytes: Uint8Array): Promise<OpenDo
     encrypted: pdf.isEncrypted,
     selected: new Set<number>(),
     annots: [],
+    fields: [],
   };
 }
 
 /**
  * Swap in freshly-produced bytes. Selection is dropped (it no longer maps
- * cleanly); the annotation layer is kept but clamped to the new page count,
- * unless `clearAnnots` says the new bytes already contain the ink.
+ * cleanly); the annotation and field layers are kept but clamped to the new
+ * page count, unless `clearAnnots` / `clearFields` says the new bytes already
+ * contain them.
  */
 export async function replaceBytes(
   doc: OpenDoc,
   bytes: Uint8Array,
-  opts: { clearAnnots?: boolean } = {},
+  opts: { clearAnnots?: boolean; clearFields?: boolean } = {},
 ): Promise<OpenDoc> {
   const pdf = await loadPdfDoc(bytes);
   const pageCount = pdf.getPageCount();
@@ -73,6 +83,7 @@ export async function replaceBytes(
     encrypted: pdf.isEncrypted,
     selected: new Set<number>(), // selection no longer maps cleanly
     annots: opts.clearAnnots ? [] : doc.annots.filter((a) => a.page < pageCount),
+    fields: opts.clearFields ? [] : doc.fields.filter((f) => f.page < pageCount),
   };
 }
 
@@ -89,6 +100,15 @@ export function removeAnnots(doc: OpenDoc, ids: string[]): OpenDoc {
 
 export function setAnnots(doc: OpenDoc, annots: Annotation[]): OpenDoc {
   return { ...doc, annots };
+}
+
+export function setFields(doc: OpenDoc, fields: FieldDraft[]): OpenDoc {
+  return { ...doc, fields };
+}
+
+/** Anything unapplied that would be lost by closing the document. */
+export function pendingEdits(doc: OpenDoc): number {
+  return doc.annots.length + doc.fields.length;
 }
 
 /**

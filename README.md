@@ -10,7 +10,7 @@ Hosted publicly via GitHub Pages at **[office.quebi.de](https://office.quebi.de)
 - **Document editor** — [office.quebi.de/docs](https://office.quebi.de/docs) — rich-text editor for notes and documents (coming soon).
 - **Paint** — [office.quebi.de/paint](https://office.quebi.de/paint) — simple Paint-like drawing tool.
 - **Table** — [office.quebi.de/table](https://office.quebi.de/table) — paste anything tabular into a fast virtualised grid; edit, type-infer, sort, filter, and export to CSV / TSV / JSON / XLSX / Markdown / LaTeX / Python / NumPy / MATLAB / SQL and more. See [Table docs](docs/table.md).
-- **PDF tools** — [office.quebi.de/pdf](https://office.quebi.de/pdf) — merge, split, rotate, crop, watermark, image-stamp, page numbers, draw & sign (vector ink, shapes, reusable signatures), fill AcroForms, edit metadata, extract text, build PDFs from images. Built on [pdf-lib](https://pdf-lib.js.org/) for editing and [pdfjs-dist](https://mozilla.github.io/pdf.js/) for rendering and text extraction. Both libraries are lazy-loaded only when `/pdf` is visited, so other tools aren't taxed by the ~1.5 MB worker bundle.
+- **PDF tools** — [office.quebi.de/pdf](https://office.quebi.de/pdf) — merge, split, rotate, crop, watermark, image-stamp, page numbers, draw & sign (vector ink, shapes, reusable signatures), author form fields (drag to place, or auto-detect from underlines and underscore runs) and fill AcroForms, edit metadata, extract text, build PDFs from images. Built on [pdf-lib](https://pdf-lib.js.org/) for editing and [pdfjs-dist](https://mozilla.github.io/pdf.js/) for rendering and text extraction. Both libraries are lazy-loaded only when `/pdf` is visited, so other tools aren't taxed by the ~1.5 MB worker bundle.
 
 More tools may follow.
 

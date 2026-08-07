@@ -1,8 +1,13 @@
 /**
- * AcroForm filler. Lists detected fields, lets the user edit values, and
+ * AcroForm filler. Lists the document's fields, lets the user edit values, and
  * optionally flattens on save.
+ *
+ * A flat PDF has nothing to list, so this is also where the other half lives:
+ * "Add fields" hands over to Form fields mode, which draws (or detects) the
+ * fields and comes back here to fill them.
  */
 import { useEffect, useState } from "react";
+import { FormInput } from "lucide-react";
 import type { OpenDoc } from "~/pdf/lib/state";
 import { fillFormFields, listFormFields, type FieldInfo } from "~/pdf/lib/forms";
 
@@ -11,9 +16,11 @@ type Props = {
   busy: boolean;
   onReplace: (bytes: Uint8Array) => Promise<void>;
   onToast: (msg: string, kind?: "info" | "error") => void;
+  /** Switch to Form fields mode to author fields for this document. */
+  onAddFields: () => void;
 };
 
-export function FormsPanel({ doc, busy, onReplace, onToast }: Props) {
+export function FormsPanel({ doc, busy, onReplace, onToast, onAddFields }: Props) {
   const [fields, setFields] = useState<FieldInfo[]>([]);
   const [values, setValues] = useState<Record<string, string>>({});
   const [flatten, setFlatten] = useState<boolean>(false);
@@ -48,14 +55,47 @@ export function FormsPanel({ doc, busy, onReplace, onToast }: Props) {
     }
   };
 
+  const addFieldsButton = (
+    <button
+      type="button"
+      onClick={onAddFields}
+      className="flex items-center gap-1.5 self-start rounded border border-accent bg-accent/15 px-3 py-1.5 text-sm text-accent hover:bg-accent/25"
+    >
+      <FormInput size={15} aria-hidden /> Add fields
+    </button>
+  );
+
   if (loading) return <div className="text-sm text-muted">Reading form fields…</div>;
-  if (fields.length === 0) return <div className="text-sm text-muted">No AcroForm fields detected in this PDF.</div>;
+  if (fields.length === 0) {
+    return (
+      <div className="flex flex-col gap-3 text-sm">
+        <p className="text-muted">
+          This PDF has no form fields yet — there's nothing to fill in.
+        </p>
+        <p className="text-xs text-muted">
+          Form fields mode can draw them by hand, or propose them automatically
+          from the page's underlines and underscore runs. Come back here to type
+          into them once they're in.
+        </p>
+        {addFieldsButton}
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-3 text-sm">
-      <p className="text-xs text-muted">
-        {fields.length} field{fields.length === 1 ? "" : "s"} detected.
-      </p>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs text-muted">
+          {fields.length} field{fields.length === 1 ? "" : "s"} detected.
+        </p>
+        <button
+          type="button"
+          onClick={onAddFields}
+          className="flex items-center gap-1 rounded border border-border px-2 py-1 text-xs text-muted hover:border-accent hover:text-fg"
+        >
+          <FormInput size={13} aria-hidden /> Add more fields
+        </button>
+      </div>
 
       <div className="flex max-h-96 flex-col gap-2 overflow-y-auto pr-1">
         {fields.map((f) => {

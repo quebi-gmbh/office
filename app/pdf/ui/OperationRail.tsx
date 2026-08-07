@@ -4,7 +4,7 @@
 import type { ReactNode } from "react";
 import {
   Combine, Scissors, RotateCw, Stamp, Image, Hash,
-  ScanText, FilePen, Info, Lock, Crop, Layers, Pencil,
+  ScanText, FilePen, Info, Lock, Crop, Layers, Pencil, FormInput,
 } from "lucide-react";
 
 export type PanelId =
@@ -18,6 +18,7 @@ export type PanelId =
   | "images-to-pdf"
   | "extract-text"
   | "forms"
+  | "fields"
   | "metadata"
   | "security"
   | "crop";
@@ -44,6 +45,7 @@ const ITEMS: Item[] = [
   { id: "numbers",       label: "Page numbers",     desc: "Add page numbers with custom format.",                      icon: <Hash size={16} aria-hidden />, needsDoc: true },
   { id: "images-to-pdf", label: "Images → PDF",     desc: "Build a new PDF from images.",                              icon: <Image size={16} aria-hidden /> },
   { id: "extract-text",  label: "Extract text",     desc: "Pull plain text out of the active PDF.",                    icon: <ScanText size={16} aria-hidden />, needsDoc: true },
+  { id: "fields",        label: "Form fields",      desc: "Draw form fields by hand, or detect them from underlines and underscore runs.", icon: <FormInput size={16} aria-hidden />, needsDoc: true },
   { id: "forms",         label: "Fill forms",       desc: "List AcroForm fields, set values, optionally flatten.",    icon: <FilePen size={16} aria-hidden />, needsDoc: true },
   { id: "metadata",      label: "Metadata",         desc: "Title, author, dates, keywords.",                           icon: <Info size={16} aria-hidden />, needsDoc: true },
   { id: "security",      label: "Security",         desc: "Remove password / inspect encryption.",                     icon: <Lock size={16} aria-hidden />, needsDoc: true },
