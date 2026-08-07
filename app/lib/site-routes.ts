@@ -84,7 +84,7 @@ export const ROUTES: RouteMeta[] = [
     name: "PDF tools",
     eyebrow: "Documents",
     description:
-      "Client-side PDF tools — draw and sign, merge, split, crop, rotate, watermark, fill forms, edit metadata, and extract text. Your files never leave the browser.",
+      "Client-side PDF tools — draw and sign, merge, split, crop, rotate, watermark, add and fill form fields, edit metadata, and extract text. Your files never leave the browser.",
   },
   {
     path: "/cad",

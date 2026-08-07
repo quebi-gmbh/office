@@ -66,6 +66,20 @@ async function getPdfJsDoc(
 }
 
 /**
+ * The cached pdfjs document for `(docId, rev)`, loading it if needed. Exposed
+ * so other readers (field detection, text extraction) share the one parse the
+ * thumbnail renderer already paid for.
+ */
+export function getSharedPdfJsDoc(
+  docId: string,
+  rev: number,
+  bytes: Uint8Array,
+  password?: string,
+): Promise<import("pdfjs-dist").PDFDocumentProxy> {
+  return getPdfJsDoc(docId, rev, bytes, password);
+}
+
+/**
  * Attempt to load the doc via pdfjs and report whether it needs a password.
  * Returns `null` when the document loads fine (unencrypted, or the supplied
  * password worked), or the `PasswordErrorKind` when pdfjs wants a password.

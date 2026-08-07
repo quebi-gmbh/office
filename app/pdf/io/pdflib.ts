@@ -42,9 +42,21 @@ export async function loadPdfDoc(bytes: Uint8Array) {
 /**
  * Save with `useObjectStreams: false` so the output is friendlier to other
  * tools and to diffing. The byte cost is small.
+ *
+ * `updateFieldAppearances` (pdf-lib's default: on) regenerates the appearance
+ * stream of every dirty AcroForm field at save time — and it *throws* on
+ * documents whose `/Fields` array references a dead object ("Expected instance
+ * of PDFDict, but got instance of undefined"). Callers that have already
+ * produced the appearances they need (see `form-fields.ts`) or that update them
+ * defensively (see `forms.ts`) pass `false` so a damaged pre-existing form
+ * can't take the whole save down with it.
  */
 export async function savePdfDoc(
   pdf: import("pdf-lib").PDFDocument,
+  opts: { updateFieldAppearances?: boolean } = {},
 ): Promise<Uint8Array> {
-  return pdf.save({ useObjectStreams: false });
+  return pdf.save({
+    useObjectStreams: false,
+    updateFieldAppearances: opts.updateFieldAppearances ?? true,
+  });
 }

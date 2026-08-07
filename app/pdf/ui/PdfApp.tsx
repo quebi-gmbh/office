@@ -23,7 +23,7 @@ import { ThumbnailGrid } from "~/pdf/ui/ThumbnailGrid";
 import { PreviewPane } from "~/pdf/ui/PreviewPane";
 import { PasswordPrompt } from "~/pdf/ui/PasswordPrompt";
 import {
-  createDoc, replaceBytes, setPassword, type OpenDoc,
+  createDoc, pendingEdits, replaceBytes, setPassword, type OpenDoc,
   selectAll, clearSelection,
 } from "~/pdf/lib/state";
 import { invalidateDoc, probePassword } from "~/pdf/lib/thumb-cache";
@@ -50,7 +50,11 @@ import { MetadataPanel } from "~/pdf/ui/panels/MetadataPanel";
 import { SecurityPanel } from "~/pdf/ui/panels/SecurityPanel";
 import { CropPanel } from "~/pdf/ui/panels/CropPanel";
 import { AnnotateWorkspace } from "~/pdf/ui/AnnotateWorkspace";
+import { FieldsWorkspace } from "~/pdf/ui/FieldsWorkspace";
 import { burnAnnotations } from "~/pdf/lib/annotate";
+import {
+  addFormFields, DEFAULT_FIELD_STYLE, type FieldStyle,
+} from "~/pdf/lib/form-fields";
 
 const THUMB_WIDTH = 128;
 const PREVIEW_WIDTH = 520;
@@ -94,7 +98,9 @@ export function PdfApp() {
   // Default to the Pages panel as soon as a doc is open.
   useEffect(() => {
     if (activeDoc && !activePanel) setActivePanel("pages");
-    if (!activeDoc && (activePanel === "pages" || activePanel === "draw")) setActivePanel(null);
+    if (!activeDoc && (activePanel === "pages" || activePanel === "draw" || activePanel === "fields")) {
+      setActivePanel(null);
+    }
   }, [activeDoc, activePanel]);
 
   // Detect whether the active (encrypted) doc still needs a password before its
@@ -177,7 +183,7 @@ export function PdfApp() {
   // Replace the active doc's bytes (used after every editing operation).
   const replaceActiveBytes = useCallback(async (
     bytes: Uint8Array,
-    opts: { clearAnnots?: boolean } = {},
+    opts: { clearAnnots?: boolean; clearFields?: boolean } = {},
   ) => {
     if (!activeDoc) return;
     const next = await replaceBytes(activeDoc, bytes, opts);
@@ -200,24 +206,45 @@ export function PdfApp() {
   }, []);
 
   /**
-   * Burn the live annotation layer and hand back the new bytes.
-   *
-   * The result is verified with pdf.js before anyone adopts it: pdf-lib
-   * rewrites the whole file on save, and for some source documents the output
-   * is one readers reject ("Bad (uncompressed) XRef entry: …"). Better to keep
-   * the user's ink and say so than to swap their document for a broken one.
+   * Verify freshly-produced bytes before anyone adopts them: pdf-lib rewrites
+   * the whole file on save, and for some source documents the output is one
+   * readers reject ("Bad (uncompressed) XRef entry: …"). Better to keep the
+   * user's pending work and say so than to swap their document for a broken
+   * one.
    */
-  const burnActive = useCallback(async (doc: OpenDoc): Promise<Uint8Array> => {
-    const out = await burnAnnotations(doc.bytes, doc.annots);
-    const problem = await firstPageParseError(out, doc.password);
+  const verifyOutput = useCallback(async (
+    bytes: Uint8Array,
+    password: string | undefined,
+    kept: string,
+  ): Promise<Uint8Array> => {
+    const problem = await firstPageParseError(bytes, password);
     if (problem) {
       throw new Error(
-        `the rewritten PDF didn't parse back (${problem}). Your annotations are ` +
+        `the rewritten PDF didn't parse back (${problem}). Your ${kept} are ` +
         `untouched — try re-saving the original from another viewer first`,
       );
     }
-    return out;
+    return bytes;
   }, []);
+
+  /** Burn the live annotation layer and hand back the verified bytes. */
+  const burnActive = useCallback(async (doc: OpenDoc): Promise<Uint8Array> => {
+    const out = await burnAnnotations(doc.bytes, doc.annots);
+    return verifyOutput(out, doc.password, "annotations");
+  }, [verifyOutput]);
+
+  /** Create the pending form fields and hand back the verified bytes. */
+  const writeFields = useCallback(async (
+    doc: OpenDoc,
+    style: FieldStyle,
+  ): Promise<{ bytes: Uint8Array; names: string[]; skipped: number }> => {
+    const { bytes, names, skipped } = await addFormFields(doc.bytes, doc.fields, style);
+    return {
+      bytes: await verifyOutput(bytes, doc.password, "field drafts"),
+      names,
+      skipped: skipped.length,
+    };
+  }, [verifyOutput]);
 
   // Draw mode: burn the live annotation layer into the bytes, then drop it.
   const applyAnnotations = useCallback(async () => {
@@ -235,10 +262,35 @@ export function PdfApp() {
     }
   }, [activeDoc, busy, burnActive, replaceActiveBytes, showToast]);
 
+  /**
+   * Form fields mode: turn the pending drafts into real AcroForm widgets, then
+   * drop the layer and hand the user straight to Fill forms — building a form
+   * and filling it are the same errand.
+   */
+  const applyFields = useCallback(async (style: FieldStyle) => {
+    if (!activeDoc || activeDoc.fields.length === 0 || busy) return;
+    setBusy(true);
+    try {
+      const { bytes, names, skipped } = await writeFields(activeDoc, style);
+      await replaceActiveBytes(bytes, { clearFields: true });
+      showToast(
+        `Added ${names.length} form field${names.length === 1 ? "" : "s"}` +
+        (skipped > 0 ? ` (${skipped} skipped)` : "") +
+        " — filling them is the next panel over",
+      );
+      setActivePanel("forms");
+    } catch (e) {
+      showToast(`Apply failed: ${(e as Error).message}`, "error");
+    } finally {
+      setBusy(false);
+    }
+  }, [activeDoc, busy, replaceActiveBytes, showToast, writeFields]);
+
   const closeDoc = useCallback((id: string) => {
     const doomed = docs.find((d) => d.id === id);
-    if (doomed && doomed.annots.length > 0 &&
-        !window.confirm(`${doomed.name} has ${doomed.annots.length} unapplied annotation(s). Close anyway?`)) {
+    const unapplied = doomed ? pendingEdits(doomed) : 0;
+    if (doomed && unapplied > 0 &&
+        !window.confirm(`${doomed.name} has ${unapplied} unapplied edit(s). Close anyway?`)) {
       return;
     }
     invalidateDoc(id);
@@ -255,15 +307,21 @@ export function PdfApp() {
     // `busy` also covers an Apply in flight — saving mid-burn would write the
     // pre-burn bytes and then race the replace.
     if (!activeDoc || busy) return false;
-    // Saving implies committing the live annotation layer — otherwise the file
-    // on disk would silently lack the ink the user can see on screen.
+    // Saving implies committing the live layers — otherwise the file on disk
+    // would silently lack the ink and the fields the user can see on screen.
     let bytes = activeDoc.bytes;
-    if (activeDoc.annots.length > 0) {
+    if (pendingEdits(activeDoc) > 0) {
       try {
-        bytes = await burnActive(activeDoc);
-        await replaceActiveBytes(bytes, { clearAnnots: true });
+        if (activeDoc.annots.length > 0) {
+          bytes = await burnAnnotations(bytes, activeDoc.annots);
+        }
+        if (activeDoc.fields.length > 0) {
+          bytes = (await addFormFields(bytes, activeDoc.fields, DEFAULT_FIELD_STYLE)).bytes;
+        }
+        bytes = await verifyOutput(bytes, activeDoc.password, "unapplied edits");
+        await replaceActiveBytes(bytes, { clearAnnots: true, clearFields: true });
       } catch (e) {
-        showToast(`Couldn't apply annotations: ${(e as Error).message}`, "error");
+        showToast(`Couldn't apply pending edits: ${(e as Error).message}`, "error");
         return false;
       }
     }
@@ -290,10 +348,10 @@ export function PdfApp() {
     downloadBytes(bytes, suffixedName(activeDoc.name));
     showToast(`Saved ${suffixedName(activeDoc.name)}`);
     return true;
-  }, [activeDoc, busy, burnActive, replaceActiveBytes, showToast]);
+  }, [activeDoc, busy, replaceActiveBytes, showToast, verifyOutput]);
 
   useUnsavedGuard({
-    dirty: !!activeDoc && (dirtyDocs.has(activeDoc.id) || activeDoc.annots.length > 0),
+    dirty: !!activeDoc && (dirtyDocs.has(activeDoc.id) || pendingEdits(activeDoc) > 0),
     name: activeDoc?.name ?? "PDF",
     save: () => saveActive(),
   });
@@ -453,9 +511,9 @@ export function PdfApp() {
 
         {/* Workspace */}
         <div className="flex min-w-0 flex-1 flex-col gap-3">
-          {activeDoc && activePanel === "draw" ? (
-            /* Draw mode takes over the whole workspace — the 540px preview is
-               far too cramped to actually draw in. */
+          {activeDoc && (activePanel === "draw" || activePanel === "fields") ? (
+            /* Draw and Form fields modes take over the whole workspace — the
+               540px preview is far too cramped to place anything in. */
             <>
               {pwNeeded && (
                 <PasswordPrompt
@@ -464,13 +522,23 @@ export function PdfApp() {
                   onSubmit={submitPassword}
                 />
               )}
-              <AnnotateWorkspace
-                doc={activeDoc}
-                busy={busy}
-                onUpdateDoc={updateDoc}
-                onApply={applyAnnotations}
-                onToast={showToast}
-              />
+              {activePanel === "draw" ? (
+                <AnnotateWorkspace
+                  doc={activeDoc}
+                  busy={busy}
+                  onUpdateDoc={updateDoc}
+                  onApply={applyAnnotations}
+                  onToast={showToast}
+                />
+              ) : (
+                <FieldsWorkspace
+                  doc={activeDoc}
+                  busy={busy}
+                  onUpdateDoc={updateDoc}
+                  onApply={applyFields}
+                  onToast={showToast}
+                />
+              )}
             </>
           ) : activeDoc ? (
             <>
@@ -534,6 +602,7 @@ export function PdfApp() {
                     onReplace={replaceActiveBytes}
                     onAddOpened={addOpened}
                     onToast={showToast}
+                    onPickPanel={setActivePanel}
                   />
                 </div>
                 <aside className="hidden w-[540px] shrink-0 flex-col gap-2 lg:flex">
@@ -624,6 +693,7 @@ function labelFor(p: PanelId | null): string {
     case "numbers": return "Page numbers";
     case "images-to-pdf": return "Images → PDF";
     case "extract-text": return "Extract text";
+    case "fields": return "Form fields";
     case "forms": return "Fill forms";
     case "metadata": return "Metadata";
     case "security": return "Security";
@@ -642,10 +712,11 @@ type PanelHostProps = {
   onReplace: (bytes: Uint8Array) => Promise<void>;
   onAddOpened: (bytes: Uint8Array, name: string) => Promise<void>;
   onToast: (msg: string, kind?: "info" | "error") => void;
+  onPickPanel: (panel: PanelId) => void;
 };
 
 function PanelHost({
-  panel, docs, activeDoc, busy, onReplace, onAddOpened, onToast,
+  panel, docs, activeDoc, busy, onReplace, onAddOpened, onToast, onPickPanel,
 }: PanelHostProps) {
   switch (panel) {
     case "pages":
@@ -665,7 +736,15 @@ function PanelHost({
     case "extract-text":
       return <ExtractTextPanel doc={activeDoc} busy={busy} onToast={onToast} />;
     case "forms":
-      return <FormsPanel doc={activeDoc} busy={busy} onReplace={onReplace} onToast={onToast} />;
+      return (
+        <FormsPanel
+          doc={activeDoc}
+          busy={busy}
+          onReplace={onReplace}
+          onToast={onToast}
+          onAddFields={() => onPickPanel("fields")}
+        />
+      );
     case "metadata":
       return <MetadataPanel doc={activeDoc} busy={busy} onReplace={onReplace} onToast={onToast} />;
     case "security":
@@ -676,6 +755,9 @@ function PanelHost({
       // Draw mode swaps the whole workspace (see AnnotateWorkspace); this
       // branch only runs if the panel host is reached without a document.
       return <p className="text-sm text-muted">Open a PDF to start drawing.</p>;
+    case "fields":
+      // Same deal — Form fields mode owns the workspace (see FieldsWorkspace).
+      return <p className="text-sm text-muted">Open a PDF to add form fields.</p>;
     default:
       return <p className="text-sm text-muted">Pick an operation from the left rail.</p>;
   }
