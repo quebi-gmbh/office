@@ -16,6 +16,7 @@ import { ImportDialog } from "~/paint/ui/ImportDialog";
 import { ExportDialog } from "~/paint/ui/ExportDialog";
 import { CanvasSizeDialog } from "~/paint/ui/CanvasSizeDialog";
 import { RestoreBanner } from "~/paint/ui/RestoreBanner";
+import { CanvasScrollbars } from "~/paint/ui/CanvasScrollbars";
 import {
   fileToImageBitmap,
   dataTransferItemToImageBitmap,
@@ -74,22 +75,8 @@ export function PaintApp() {
   // ─── Viewport wiring ──────────────────────────────────────────────────────
 
   useEffect(() => {
-    engine.fitViewport = () => {
-      const t = viewport.fit();
-      const wrap = viewport.wrapRef.current;
-      if (wrap) {
-        wrap.style.transform = viewport.cssTransform(t);
-        engine.store.setState((s) => ({ ...s, zoom: t.zoom, panX: t.panX, panY: t.panY }));
-      }
-    };
-    engine.resetZoom = () => {
-      const t = viewport.oneToOne();
-      const wrap = viewport.wrapRef.current;
-      if (wrap) {
-        wrap.style.transform = viewport.cssTransform(t);
-        engine.store.setState((s) => ({ ...s, zoom: 1, panX: 0, panY: 0 }));
-      }
-    };
+    engine.fitViewport = () => viewport.apply(viewport.fit());
+    engine.resetZoom = () => viewport.apply(viewport.oneToOne());
   }, [engine, viewport]);
 
   // Fit the canvas to the viewport once on mount only.
@@ -192,16 +179,24 @@ export function PaintApp() {
 
   // ─── Pointer forwarding ───────────────────────────────────────────────────
 
+  // Set for the lifetime of a drag that the viewport claimed as a pan (hand tool
+  // or Space-hold), so the whole down→move→up sequence is withheld from the
+  // engine — otherwise the active tool would paint along the pan path.
+  const panGestureRef = useRef(false);
+
   const onPointerDown = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>) => {
+      panGestureRef.current = viewport.isPanGesture();
+      if (panGestureRef.current) return;
       notifyActivity();
       engine.onPointerDown(e.nativeEvent);
     },
-    [engine, notifyActivity],
+    [engine, notifyActivity, viewport],
   );
 
   const onPointerMove = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>) => {
+      if (panGestureRef.current) return;
       engine.onPointerMove(e.nativeEvent);
     },
     [engine],
@@ -209,6 +204,10 @@ export function PaintApp() {
 
   const onPointerUp = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>) => {
+      if (panGestureRef.current) {
+        panGestureRef.current = false;
+        return;
+      }
       notifyActivity();
       engine.onPointerUp(e.nativeEvent);
     },
@@ -386,6 +385,12 @@ export function PaintApp() {
   const { width, height } = state.doc;
   const isTransparent = state.doc.bgWasTransparent;
 
+  // A viewport gesture (Space-hold, or an in-flight pan drag) overrides the
+  // tool cursor; otherwise the active tool decides.
+  const canvasCursor =
+    viewport.panCursor ??
+    (state.tool === "pan" ? "grab" : state.tool === "text" ? "text" : "crosshair");
+
   return (
     <section className="paint-app">
       {restoreSession && (
@@ -421,6 +426,7 @@ export function PaintApp() {
       >
         <div
           ref={viewport.wrapRef}
+          id="paint-canvas-wrap"
           className={`paint-canvas-wrap${isTransparent ? " paint-canvas-wrap--checker" : ""}`}
           style={{ width: width, height: height, transformOrigin: "0 0" }}
         >
@@ -435,7 +441,7 @@ export function PaintApp() {
             width={width}
             height={height}
             className="paint-canvas paint-canvas-preview"
-            style={{ cursor: state.tool === "text" ? "text" : "crosshair" }}
+            style={{ cursor: canvasCursor }}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
@@ -445,6 +451,15 @@ export function PaintApp() {
             <TextOverlay engine={engine} state={state} canvasScale={canvasScale} />
           )}
         </div>
+        <CanvasScrollbars
+          outerRef={outerRef}
+          docWidth={width}
+          docHeight={height}
+          zoom={state.zoom}
+          panX={state.panX}
+          panY={state.panY}
+          setPan={viewport.setPan}
+        />
       </div>
       <StatusBar state={state} />
 

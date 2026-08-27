@@ -33,6 +33,7 @@ import { fill } from "~/paint/tools/fill";
 import { eyedropper } from "~/paint/tools/eyedropper";
 import { text } from "~/paint/tools/text";
 import { select } from "~/paint/tools/select";
+import { pan } from "~/paint/tools/pan";
 import { copyToClipboard } from "~/paint/io/export";
 
 // ─── Registry of available tools ────────────────────────────────────────────
@@ -48,6 +49,7 @@ const TOOLS: Record<ToolId, Tool> = {
   eyedropper,
   text,
   select,
+  pan,
 };
 
 // ─── Default state ────────────────────────────────────────────────────────────

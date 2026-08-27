@@ -19,6 +19,7 @@ const TOOL_LABELS: Record<string, string> = {
   eyedropper: "Eyedropper",
   text: "Text",
   select: "Select",
+  pan: "Pan",
 };
 
 export function StatusBar({ state }: StatusBarProps) {
