@@ -1,5 +1,5 @@
 /**
- * Viewport hook — wheel zoom, space-drag pan, two-finger pinch (pointer events).
+ * Viewport hook — wheel zoom, drag pan, two-finger pinch (pointer events).
  *
  * The viewport transform is applied as a CSS transform on the canvas wrapper:
  *   translate(panX px, panY px) scale(zoom)
@@ -15,17 +15,19 @@
  *   scale' = clamp(scale * exp(-dy * k), 0.05, 32)
  *   Pan is adjusted so the document point under the cursor stays put.
  *
- * Pan:
- *   Hold Space → grab cursor; drag pans.
- *   Two-finger touch drag (both pointers) — centroid translation.
+ * Pan — one drag implementation, three ways in:
+ *   Hold Space (temporary override of whatever tool is active).
+ *   The "pan" (hand) tool, which is armed for as long as it is selected.
+ *   The scrollbar thumbs, via the exposed setPan().
+ *   Plus: two-finger touch drag (centroid translation) and wheel scroll.
  *   Ctrl+0 → fit to wrapper; Ctrl+1 → 100 %.
  *
  * Pinch cancels the active tool (calls engine.cancelDrag()).
  */
-import { useEffect, useRef, useCallback, useMemo } from "react";
+import { useEffect, useRef, useCallback, useMemo, useState } from "react";
 import type { Engine } from "~/paint/engine";
 
-interface Transform {
+export interface Transform {
   panX: number;
   panY: number;
   zoom: number;
@@ -40,6 +42,28 @@ interface UseViewportResult {
   fit(): Transform;
   /** 100% transform. */
   oneToOne(): Transform;
+  /**
+   * Cursor the canvas should show because of a *viewport* gesture, or null when
+   * the viewport has no opinion and the active tool's cursor should win.
+   * "grabbing" while a pan drag is in flight, "grab" while Space is held.
+   */
+  panCursor: "grab" | "grabbing" | null;
+  /** Set the pan absolutely, keeping the current zoom. Used by the scrollbars. */
+  setPan(panX: number, panY: number): void;
+  /** Apply a full transform (CSS + engine state). Used for fit / 100 %. */
+  apply(t: Transform): void;
+  /**
+   * True when a pointer drag on the canvas would pan rather than draw — the pan
+   * tool is selected, or Space is held. Read at pointerdown so the canvas can
+   * withhold the event from the engine entirely.
+   */
+  isPanGesture(): boolean;
+}
+
+/** Last screen position seen during a drag-pan, in client coordinates. */
+interface DragOrigin {
+  x: number;
+  y: number;
 }
 
 export function useViewport(engine: Engine): UseViewportResult {
@@ -50,19 +74,38 @@ export function useViewport(engine: Engine): UseViewportResult {
 
   // Space-bar state.
   const spaceRef = useRef(false);
-  const spaceDragRef = useRef<{ x: number; y: number } | null>(null);
+  // Active drag-pan origin (Space-hold *or* the pan tool), null when not dragging.
+  const panDragRef = useRef<DragOrigin | null>(null);
 
   // Two-finger pointer IDs and their last positions.
   const fingersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
 
-  function applyTransform(t: Transform) {
-    const wrap = wrapRef.current;
-    if (!wrap) return;
-    transformRef.current = t;
-    wrap.style.transform = `translate(${t.panX}px, ${t.panY}px) scale(${t.zoom})`;
-    // Update engine state so status-bar zoom % is correct.
-    engine.store.setState((s) => ({ ...s, zoom: t.zoom, panX: t.panX, panY: t.panY }));
-  }
+  // Mirrored into React state so the canvas cursor can react to it.
+  const [spaceHeld, setSpaceHeld] = useState(false);
+  const [panning, setPanning] = useState(false);
+
+  const applyTransform = useCallback(
+    (t: Transform) => {
+      const wrap = wrapRef.current;
+      if (!wrap) return;
+      transformRef.current = t;
+      wrap.style.transform = `translate(${t.panX}px, ${t.panY}px) scale(${t.zoom})`;
+      // Update engine state so the status-bar zoom % and the scrollbars are correct.
+      engine.store.setState((s) =>
+        s.zoom === t.zoom && s.panX === t.panX && s.panY === t.panY
+          ? s
+          : { ...s, zoom: t.zoom, panX: t.panX, panY: t.panY },
+      );
+    },
+    [engine],
+  );
+
+  const setPan = useCallback(
+    (panX: number, panY: number) => {
+      applyTransform({ ...transformRef.current, panX, panY });
+    },
+    [applyTransform],
+  );
 
   function getWrapSize(): { w: number; h: number } {
     const wrap = wrapRef.current;
@@ -88,6 +131,12 @@ export function useViewport(engine: Engine): UseViewportResult {
   const oneToOne = useCallback((): Transform => {
     return { panX: 0, panY: 0, zoom: 1 };
   }, []);
+
+  /** True when a pointer drag on the canvas should pan instead of draw. */
+  const isPanGesture = useCallback(
+    () => spaceRef.current || engine.store.getSnapshot().tool === "pan",
+    [engine],
+  );
 
   useEffect(() => {
     const wrap = wrapRef.current;
@@ -144,7 +193,7 @@ export function useViewport(engine: Engine): UseViewportResult {
           (e.target as HTMLElement)?.tagName?.match(/INPUT|TEXTAREA/);
         if (editable) return;
         spaceRef.current = true;
-        wrap!.style.cursor = "grab";
+        setSpaceHeld(true);
         e.preventDefault();
       }
     }
@@ -152,9 +201,16 @@ export function useViewport(engine: Engine): UseViewportResult {
     function onKeyUp(e: KeyboardEvent) {
       if (e.code === "Space") {
         spaceRef.current = false;
-        spaceDragRef.current = null;
-        wrap!.style.cursor = "";
+        setSpaceHeld(false);
+        // Only end the drag if it isn't also held open by the pan tool.
+        if (!isPanGesture()) endPanDrag();
       }
+    }
+
+    function endPanDrag() {
+      if (!panDragRef.current) return;
+      panDragRef.current = null;
+      setPanning(false);
     }
 
     // ── Two-finger pointer drag ────────────────────────────────────────────
@@ -168,19 +224,21 @@ export function useViewport(engine: Engine): UseViewportResult {
         // Two-finger: cancel active tool drag.
         engine.cancelDrag();
       }
-      if (spaceRef.current) {
-        spaceDragRef.current = { x: e.clientX, y: e.clientY };
+      if (isPanGesture()) {
+        panDragRef.current = { x: e.clientX, y: e.clientY };
+        setPanning(true);
       }
     }
 
     function onPointerMove(e: PointerEvent) {
       const fingers = fingersRef.current;
 
-      // Space-drag pan.
-      if (spaceRef.current && spaceDragRef.current) {
-        const dx = e.clientX - spaceDragRef.current.x;
-        const dy = e.clientY - spaceDragRef.current.y;
-        spaceDragRef.current = { x: e.clientX, y: e.clientY };
+      // Drag pan — Space-hold or the pan tool, one code path.
+      const origin = panDragRef.current;
+      if (origin) {
+        const dx = e.clientX - origin.x;
+        const dy = e.clientY - origin.y;
+        panDragRef.current = { x: e.clientX, y: e.clientY };
         const t = transformRef.current;
         applyTransform({ ...t, panX: t.panX + dx, panY: t.panY + dy });
         return;
@@ -219,7 +277,7 @@ export function useViewport(engine: Engine): UseViewportResult {
 
     function onPointerUp(e: PointerEvent) {
       fingersRef.current.delete(e.pointerId);
-      if (spaceRef.current) spaceDragRef.current = null;
+      endPanDrag();
     }
 
     window.addEventListener("keydown", onKeyDown, true);
@@ -227,6 +285,7 @@ export function useViewport(engine: Engine): UseViewportResult {
     // Listen on window so we get moves anywhere.
     window.addEventListener("pointermove", onPointerMove);
     window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerUp);
     wrap.addEventListener("pointerdown", onPointerDown);
 
     return () => {
@@ -235,24 +294,32 @@ export function useViewport(engine: Engine): UseViewportResult {
       window.removeEventListener("keyup", onKeyUp, true);
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerUp);
       wrap.removeEventListener("pointerdown", onPointerDown);
     };
-  }, [engine, fit]);
+  }, [engine, applyTransform, isPanGesture]);
 
-  // Ctrl+0 / Ctrl+1 wired via the shortcuts registry in #28.
-  // Expose fit/oneToOne for the toolbar and shortcuts to call.
-  // We need to patch the engine to support viewport shortcuts.
+  const panCursor: "grab" | "grabbing" | null = panning
+    ? "grabbing"
+    : spaceHeld
+      ? "grab"
+      : null;
 
-  // Stable object — only recreated when fit/oneToOne callbacks change (i.e. when
-  // engine changes), NOT on every render.  Without useMemo the returned object
-  // is a new reference each render, making effects that depend on it loop.
+  // Stable object — only recreated when its members change (i.e. when engine
+  // changes, or a pan gesture starts/stops), NOT on every render. Without
+  // useMemo the returned object is a new reference each render, making effects
+  // that depend on it loop.
   return useMemo(
     () => ({
       wrapRef,
       cssTransform: (t: Transform) => `translate(${t.panX}px, ${t.panY}px) scale(${t.zoom})`,
       fit,
       oneToOne,
+      panCursor,
+      setPan,
+      apply: applyTransform,
+      isPanGesture,
     }),
-    [fit, oneToOne],
+    [fit, oneToOne, panCursor, setPan, applyTransform, isPanGesture],
   );
 }

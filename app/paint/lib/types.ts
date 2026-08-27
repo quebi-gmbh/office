@@ -12,7 +12,8 @@ export type ToolId =
   | "fill"
   | "eyedropper"
   | "text"
-  | "select";
+  | "select"
+  | "pan";
 
 /** 9-point anchor for canvas resize (where existing pixels land in the new canvas). */
 export type AnchorPoint =

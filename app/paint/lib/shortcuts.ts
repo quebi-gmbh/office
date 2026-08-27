@@ -63,6 +63,7 @@ export const SHORTCUTS: Shortcut[] = [
   toolShortcut("KeyI", "eyedropper", "Eyedropper",  "I"),
   toolShortcut("KeyT", "text",       "Text",        "T"),
   toolShortcut("KeyM", "select",     "Select (marquee)", "M"),
+  toolShortcut("KeyH", "pan",        "Pan (hand) — or hold Space with any tool", "H"),
 
   // ── Brush size
   {

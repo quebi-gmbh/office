@@ -11,6 +11,7 @@ import {
   Eraser,
   FilePlus,
   FolderOpen,
+  Hand,
   Layers,
   Minus,
   MousePointer2,
@@ -54,9 +55,13 @@ const TOOL_BUTTONS: Array<{ id: ToolId; icon: ReactNode; title: string }> = [
   { id: "fill",       icon: <PaintBucket   size={15} aria-hidden />, title: "Fill (G)"       },
   { id: "eyedropper", icon: <Pipette       size={15} aria-hidden />, title: "Eyedropper (I)" },
   { id: "text",       icon: <Type          size={15} aria-hidden />, title: "Text (T)"       },
+  { id: "pan",        icon: <Hand          size={15} aria-hidden />, title: "Pan (H) — or hold Space" },
 ];
 
 const SHAPE_TOOLS = new Set<ToolId>(["line", "rect", "ellipse"]);
+
+/** Tools with no brush size to configure. */
+const NO_SIZE_TOOLS = new Set<ToolId>(["eyedropper", "text", "select", "pan"]);
 
 export function Toolbar({ engine, state, onHelpOpen, onNewDoc, onOpenFile, onExport, onClearData, onResize, onScale, onSave }: ToolbarProps) {
 
@@ -82,8 +87,8 @@ export function Toolbar({ engine, state, onHelpOpen, onNewDoc, onOpenFile, onExp
 
       <div className="paint-toolbar__sep" />
 
-      {/* Size — shown for drawing tools, not eyedropper/text/select */}
-      {state.tool !== "eyedropper" && state.tool !== "text" && state.tool !== "select" && (
+      {/* Size — shown for drawing tools only (see NO_SIZE_TOOLS) */}
+      {!NO_SIZE_TOOLS.has(state.tool) && (
         <label className="paint-toolbar__label" title={`Size: ${state.size}px`}>
           <span>Size</span>
           <input
